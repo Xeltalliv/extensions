@@ -15,9 +15,10 @@
 	let lastState = false;
 	let oldWidth = 0;
 	let oldHeight = 0;
+	let isPackaged = false;
 	
-	let stageWrapper = document.querySelector("[class*='stage-wrapper_stage-canvas-wrapper']");
-	let stageWrapperParent = stageWrapper.parentElement;
+	let stageWrapper;
+	let stageWrapperParent;
 	const div = document.createElement("div");
 	document.body.append(div);
 	const canvas = vm.renderer.canvas;
@@ -28,23 +29,29 @@
 		lastState = state;
 		
 		if(state) {
-			oldWidth  = runtime.stageWidth;
-			oldHeight = runtime.stageHeight;
-			
-			runtime.setStageSize(div.clientWidth/div.clientHeight*oldHeight, oldHeight);
-			
-			const scale = div.clientHeight / canvas.clientHeight;
-			console.log(div.clientHeight, canvas.clientHeight, scale)
-			stageWrapper.style = "transform-origin: top left; transform: scale("+scale+","+scale+")";
-			
-			const borderThing = stageWrapper.children[0].children[0].style;
-			borderThing["border"] = "none";
-			borderThing["border-radius"] = "0";
-			borderThing["transform"] = ""; // Removes translateX which I don't even know why it appers
+			setTimeout(() => {
+				oldWidth  = runtime.stageWidth;
+				oldHeight = runtime.stageHeight;
+				
+				runtime.setStageSize(div.clientWidth/div.clientHeight*oldHeight, oldHeight);
+				
+				const scale = div.clientHeight / canvas.clientHeight;
+				console.log(div.clientHeight, canvas.clientHeight, scale)
+				stageWrapper.style = "transform-origin: top left; transform: scale("+scale+","+scale+")";
+				
+				if(!isPackaged) {
+					const borderThing = stageWrapper.children[0].children[0].style;
+					borderThing["border"] = "none";
+					borderThing["border-radius"] = "0";
+					borderThing["transform"] = ""; // Removes translateX which I don't even know why it appers
+				}
+			}, 100);
 		} else {
-			const borderThing = stageWrapper.children[0].children[0].style;
-			borderThing["border"] = "";
-			borderThing["border-radius"] = "";
+			if(!isPackaged) {
+				const borderThing = stageWrapper.children[0].children[0].style;
+				borderThing["border"] = "";
+				borderThing["border-radius"] = "";
+			}
 			stageWrapper.style = "";
 			stageWrapperParent.append(stageWrapper);
 			
@@ -91,6 +98,10 @@
 			if(document.fullscreenElement) return;
 
 			stageWrapper = document.querySelector("[class*='stage-wrapper_stage-canvas-wrapper']"); // Entering and exiting editor recreates this element
+			if(!stageWrapper) {
+				stageWrapper = document.querySelector("[class='sc-root']");
+				isPackaged = true;
+			}
 			stageWrapperParent = stageWrapper.parentElement;
 			console.log(stageWrapper, stageWrapperParent);
 			
