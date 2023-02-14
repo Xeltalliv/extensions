@@ -220,6 +220,7 @@
 
 		vm.addListener("EXTENSION_ADDED", tryUseScratchBlocks);
 		vm.addListener("BLOCKSINFO_UPDATE", tryUseScratchBlocks);
+		tryUseScratchBlocks();
 	}
 
 	function tryUseScratchBlocks() {
