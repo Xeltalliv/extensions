@@ -17,6 +17,7 @@
     }
   }
 
+  const vm = Scratch.vm;
   vm.addListener('EXTENSION_ADDED', tryUseBlockly);
   vm.addListener('BLOCKSINFO_UPDATE', tryUseBlockly);
   tryUseBlockly();
