@@ -50,11 +50,6 @@ Created by @SIPC in https://github.com/TurboWarp/extensions/issues/90#issuecomme
 ## true-fantom/network.svg
 Created by @True-Fantom in https://github.com/TurboWarp/extensions/pull/122#issue-1524383752
 
-## true-fantom/math.svg
-Created by @True-Fantom in https://github.com/TurboWarp/extensions/pull/219#issue-1607102376
-
-## true-fantom/couplers.svg
-Created by @True-Fantom in https://github.com/TurboWarp/extensions/pull/219#issue-1607102376
-
 ## xeltalliv/clippingblending.svg
-Created by @True-Fantom in https://github.com/TurboWarp/extensions/pull/210#issuecomment-1448765453
+The dango is from [Twemoji](https://twemoji.twitter.com/) and is licensed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Background based on an image created by @True-Fantom in https://github.com/TurboWarp/extensions/pull/210#issuecomment-1448765453

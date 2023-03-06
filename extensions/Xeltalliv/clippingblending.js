@@ -6,15 +6,13 @@
   }
 
 
-  // Simplified remake of an icon by True-Fantom
   const icon = 'data:image/svg+xml,' + encodeURIComponent(`
     <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0,0,360,360">
       <circle cx="180" cy="180" r="180" fill="#9966FF"/>
-      <path d="M180,350
-       c-25,-85  -77,-137 -162,-162
-       c 85,-25  137, -77  162,-162
-       c 25, 85   77, 137  162, 162
-       c-85, 25 -137,  77 -162, 162z" stroke-width="0" fill="#ffffff"/>
+      <rect fill="none" x="75" y="75" width="150" height="150" stroke="#ffffff" stroke-width="20" stroke-dasharray="20" linecap="round" rx="3" ry="5"/>
+      <circle cx="230" cy="185" r="60" fill="#ffffff" stroke-width="10" stroke="#9966FF"/>
+      <circle cx="190" cy="250" r="60" fill="#ffffff" stroke-width="10" stroke="#9966FF"/>
+      <circle cx="270" cy="250" r="60" fill="#ffffff" stroke-width="10" stroke="#9966FF"/>
     </svg>`);
 
 
