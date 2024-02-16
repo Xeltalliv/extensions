@@ -1599,6 +1599,7 @@ void main() {
 		{
 			opcode: "setMeshFromFile",
 			blockType: BlockType.COMMAND,
+			color1: "#aa1111",
 			text: "set [NAME] from [FILETYPE] [LIST]",
 			arguments: {
 				NAME: {
