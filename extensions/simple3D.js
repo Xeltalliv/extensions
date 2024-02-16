@@ -303,6 +303,10 @@
 	gl.enable(gl.DEPTH_TEST);
 	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
 
+	const ext_af = gl.getExtension("EXT_texture_filter_anisotropic") ||
+		gl.getExtension("MOZ_EXT_texture_filter_anisotropic") ||
+		gl.getExtension("WEBKIT_EXT_texture_filter_anisotropic");
+
 /*
 	const ogl = gl;
 	gl = {}
@@ -398,12 +402,13 @@
 			this.filter = gl.NEAREST;
 			this.mipFilter = gl.NEAREST;
 			this.mipEnabled = false;
+			this.anisotropy = 1;
 			this.update();
 		}
 		update() {
 			let minFilter = this.filter;
 			if (this.mipEnabled) {
-				const lookup = [[gl.NEAREST_MIP_NEAREST, gl.NEAREST_MIP_LINEAR], [gl.LINEAR_MIP_NEAREST, gl.LINEAR_MIP_LINEAR]];
+				const lookup = [[gl.NEAREST_MIPMAP_NEAREST, gl.NEAREST_MIPMAP_LINEAR], [gl.LINEAR_MIPMAP_NEAREST, gl.LINEAR_MIPMAP_LINEAR]];
 				minFilter = lookup[+(this.filter == gl.LINEAR)][+(this.mipFilter == gl.LINEAR)];
 			}
 			gl.bindTexture(gl.TEXTURE_2D, this.texture);
@@ -434,10 +439,24 @@
 			if (this.mipEnabled) {
 				gl.generateMipmap(gl.TEXTURE_2D);
 			}
+			if (ext_af) gl.texParameterf(gl.TEXTURE_2D, ext_af.TEXTURE_MAX_ANISOTROPY_EXT, this.anisotropy);
 			if (this.depthTexture) {
 				gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthTexture);
 				gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, this.width, this.height);
 			}
+		}
+		setMipmapState(enabled, filter) {
+			const genMip = !this.mipEnabled && enabled;
+			this.mipEnabled = enabled;
+			this.mipFilter = filter;
+			this.update();
+			if (genMip) gl.generateMipmap(gl.TEXTURE_2D);
+		}
+		setAnisotropy(value) {
+			if (!ext_af) return;
+			this.anisotropy = value;
+			gl.bindTexture(gl.TEXTURE_2D, this.texture);
+			gl.texParameterf(gl.TEXTURE_2D, ext_af.TEXTURE_MAX_ANISOTROPY_EXT, value);
 		}
 		getFramebuffer() {
 			if (this.framebuffer) return this.framebuffer;
@@ -454,7 +473,7 @@
 				gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 				this.depthTexture = gl.createRenderbuffer();
 				gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthTexture);
-				gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, this.width, this.height);
+				gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, this.width, this.height);
 				gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.depthTexture);
 			}
 		}
@@ -638,6 +657,9 @@ in vec4 a_weight;
 #endif
 #endif
 #ifdef INSTANCE_POS
+in vec3 a_instanceTransform;
+#endif
+#ifdef INSTANCE_POS_SCALE
 in vec4 a_instanceTransform;
 #endif
 #ifdef INSTANCE_MATRIX
@@ -654,6 +676,7 @@ uniform mat4 u_model;
 #ifdef BONE_COUNT
 uniform mat4 u_bones[BONE_COUNT];
 #endif
+uniform vec2 u_uvOffset;
 
 void main() {
 	vec4 pos = a_position;
@@ -675,12 +698,18 @@ void main() {
 #endif
 #endif
 	pos = u_model * pos;
+#ifdef INSTANCE_POS_SCALE
+	pos *= a_instanceTransform.w;
+#endif
 #ifdef BILLBOARD
 	vec4 pos2 = pos;
 	pos = vec4(0,0,0,1);
 #endif
 #ifdef INSTANCE_POS
-	pos = a_instanceTransform + pos;
+	pos.xyz += a_instanceTransform.xyz;
+#endif
+#ifdef INSTANCE_POS_SCALE
+	pos.xyz += a_instanceTransform.xyz;
 #endif
 #ifdef INSTANCE_MATRIX
 	pos = a_instanceTransform * pos;
@@ -689,9 +718,13 @@ void main() {
 #ifdef BILLBOARD
 	view += pos2;
 #endif
+	vec2 uv = a_uv;
+#ifdef UV_OFFSET
+	uv += u_uvOffset;
+#endif
 	gl_Position = u_projection * view;
 	v_color = a_color;
-	v_uv = a_uv;
+	v_uv = uv;
 	v_viewpos = view.xyz;
 }
 `;
@@ -882,6 +915,7 @@ void main() {
 		{
 			opcode: "resetEverything",
 			blockType: BlockType.COMMAND,
+			color1: "#aa1111",
 			text: "reset everything",
 			def: function() {
 				//TODO
@@ -1290,6 +1324,10 @@ void main() {
 				const texture = Cast.toString(TEXTURE);
 				const wrap = Cast.toString(WRAP) == "repeat" ? gl.REPEAT : gl.CLAMP_TO_EDGE;
 				const filter = Cast.toString(FILTER) == "blurred" ? gl.LINEAR : gl.NEAREST;
+/*				if (mesh.myData.cubeTexture) {
+					mesh.myData.cubeTexture.destroy();
+					mesh.myData.cubeTexture = null;
+				}*/
 				let textureObj = mesh.myData.texture ?? (mesh.myData.texture = new Texture());
 				mesh.update();
 				const onData = function(data) {
@@ -1311,6 +1349,7 @@ void main() {
 		{
 			opcode: "setMeshTexCoordUVW",
 			blockType: BlockType.COMMAND,
+			color1: "#aa1111",
 			text: "set [NAME] cube texture coordinates UVW [U] [V] [W]",
 			arguments: {
 				NAME: {
@@ -1345,6 +1384,7 @@ void main() {
 		{
 			opcode: "setMeshCubeTexture",
 			blockType: BlockType.COMMAND,
+			color1: "#aa1111",
 			text: "set [NAME] cube texture [SIDE] [TEXTURE] [WRAP] [FILTER]",
 			arguments: {
 				NAME: {
@@ -1368,6 +1408,26 @@ void main() {
 				},
 			},
 			def: function({NAME, SIDE, TEXTURE, WRAP, FILTER}, {target}) {
+/*				const mesh = meshes.get(Cast.toString(NAME));
+				if (!mesh) return;
+				const texture = Cast.toString(TEXTURE);
+				const wrap = Cast.toString(WRAP) == "repeat" ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+				const filter = Cast.toString(FILTER) == "blurred" ? gl.LINEAR : gl.NEAREST;
+				if (mesh.myData.texture) {
+					mesh.myData.texture.destroy();
+					mesh.myData.texture = null;
+				}
+				let textureObj = mesh.myData.cubeTexture ?? (mesh.myData.cubeTexture = new Texture());
+				mesh.update();
+				const onData = function(data) {
+					if (data == null || mesh.destroyed) return;
+					textureObj.setCubeTexture(SIDE, data.data, data.width, data.height, wrap, filter);
+				}
+				if (imageSourceSync) {
+					onData(imageSourceSync);
+				} else {
+					imageSource.then(onData);
+				}*/
 			}
 		},
 		{
@@ -1384,28 +1444,37 @@ void main() {
 					menu: "textureMipmapping"
 				},
 			},
-			def: function({NAME, TEXTURE, WRAP, FILTER}, {target}) {
-				//TODO
+			def: function({NAME, MIPMAPPING}, {target}) {
+				const mesh = meshes.get(Cast.toString(NAME));
+				if (!mesh) return;
+				const textureObj = mesh.myData.texture;
+				if (!textureObj) return;
+				if (MIPMAPPING == "off") textureObj.setMipmapState(false, gl.NEAREST);
+				if (MIPMAPPING == "sharp transitions") textureObj.setMipmapState(true, gl.NEAREST);
+				if (MIPMAPPING == "smooth transitions") textureObj.setMipmapState(true, gl.LINEAR);
 			}
 		},
 		{
-			opcode: "setMeshTexCoordOffsetUV",
+			opcode: "setMeshTextureAnisotropy",
 			blockType: BlockType.COMMAND,
-			text: "set [NAME] texture coordinate offset UV [U] [V]",
+			text: "set [NAME] texture anisotropic filtering [ANISOTROPY]",
 			arguments: {
 				NAME: {
 					type: ArgumentType.STRING,
 					defaultValue: "my mesh"
 				},
-				U: {
-					type: ArgumentType.NUMBER,
-				},
-				V: {
-					type: ArgumentType.NUMBER,
+				ANISOTROPY: {
+					type: ArgumentType.STRING,
+					menu: "powersOfTwo",
+					defaultValue: 16
 				},
 			},
-			def: function({NAME, U, V}, {target}) {
-				//TODO
+			def: function({NAME, ANISOTROPY}, {target}) {
+				const mesh = meshes.get(Cast.toString(NAME));
+				if (!mesh) return;
+				const textureObj = mesh.myData.texture;
+				if (!textureObj) return;
+				textureObj.setAnisotropy(Math.max(1, Math.round(Cast.toNumber(ANISOTROPY))));
 			}
 		},
 		{
@@ -1514,6 +1583,7 @@ void main() {
 				let bufferName, size;
 				if (PROPERTY == "transforms") {bufferName = "instanceTransforms"; size = 16;}
 				if (PROPERTY == "positions" ) {bufferName = "instanceTransforms"; size = 3; }
+				if (PROPERTY == "positions and sizes" ) {bufferName = "instanceTransforms"; size = 4; }
 				if (!bufferName) return;
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [SRCLIST], Float32Array);
@@ -1667,6 +1737,29 @@ void main() {
 			}
 		},
 		{
+			opcode: "setMeshTexCoordOffsetUV",
+			blockType: BlockType.COMMAND,
+			text: "set [NAME] texture coordinate offset UV [U] [V]",
+			arguments: {
+				NAME: {
+					type: ArgumentType.STRING,
+					defaultValue: "my mesh"
+				},
+				U: {
+					type: ArgumentType.NUMBER,
+				},
+				V: {
+					type: ArgumentType.NUMBER,
+				},
+			},
+			def: function({NAME, U, V}, {target}) {
+				const mesh = meshes.get(Cast.toString(NAME));
+				if (!mesh) return;
+				mesh.myData.uvOffset = [Cast.toNumber(U), Cast.toNumber(V)];
+				mesh.update();
+			}
+		},
+		{
 			opcode: "drawMesh",
 			blockType: BlockType.COMMAND,
 			text: "draw mesh [NAME]",
@@ -1701,8 +1794,10 @@ void main() {
 				if (mesh.data.alphaTest > 0) flags.push("ALPHATEST");
 				if (mesh.data.makeOpaque) flags.push("MAKE_OPAQUE");
 				if (mesh.data.billboarding) flags.push("BILLBOARD");
+				if (mesh.data.uvOffset) flags.push("UV_OFFSET");
 				if (mesh.buffers.instanceTransforms) {
 					if (mesh.buffers.instanceTransforms.size == 3)  flags.push("INSTANCE_POS");
+					if (mesh.buffers.instanceTransforms.size == 4)  flags.push("INSTANCE_POS_SCALE");
 					if (mesh.buffers.instanceTransforms.size == 16) flags.push("INSTANCE_MATRIX");
 				}
 				const program = programs.get(flags);
@@ -1738,11 +1833,7 @@ void main() {
 				}
 				if (mesh.buffers.instanceTransforms) {
 					gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.instanceTransforms.buffer);
-					if (mesh.buffers.instanceTransforms.size == 3) {
-						gl.enableVertexAttribArray(program.aloc.a_instanceTransform);
-						gl.vertexAttribPointer(program.aloc.a_instanceTransform, 3, gl.FLOAT, false, 0, 0);
-						gl.vertexAttribDivisor(program.aloc.a_instanceTransform, 1);
-					} else {
+					if (mesh.buffers.instanceTransforms.size == 16) {
 						gl.enableVertexAttribArray(program.aloc.a_instanceTransform  );
 						gl.enableVertexAttribArray(program.aloc.a_instanceTransform+1);
 						gl.enableVertexAttribArray(program.aloc.a_instanceTransform+2);
@@ -1755,6 +1846,10 @@ void main() {
 						gl.vertexAttribDivisor(program.aloc.a_instanceTransform+1, 1);
 						gl.vertexAttribDivisor(program.aloc.a_instanceTransform+2, 1);
 						gl.vertexAttribDivisor(program.aloc.a_instanceTransform+3, 1);
+					} else {
+						gl.enableVertexAttribArray(program.aloc.a_instanceTransform);
+						gl.vertexAttribPointer(program.aloc.a_instanceTransform, mesh.buffers.instanceTransforms.size, gl.FLOAT, false, 0, 0);
+						gl.vertexAttribDivisor(program.aloc.a_instanceTransform, 1);
 					}
 				}
 
@@ -1811,6 +1906,9 @@ void main() {
 				if (mesh.bonesDiff) {
 					gl.uniformMatrix4fv(program.uloc.u_bones, false, mesh.bonesDiff);
 				}
+				if (mesh.data.uvOffset) {
+					gl.uniform2fv(program.uloc.u_uvOffset, mesh.data.uvOffset);
+				}
 
 				gl.uniformMatrix4fv(program.uloc.u_projection, false, transforms.viewToProjected);
 				gl.uniformMatrix4fv(program.uloc.u_view, false, transforms.worldToView);
@@ -1847,10 +1945,7 @@ void main() {
 					gl.disableVertexAttribArray(program.aloc.a_weight);
 				}
 				if (mesh.buffers.instanceTransforms) {
-					if (mesh.buffers.instanceTransforms.size == 3) {
-						gl.disableVertexAttribArray(program.aloc.a_instanceTransform);
-						gl.vertexAttribDivisor(program.aloc.a_instanceTransform, 0);
-					} else {
+					if (mesh.buffers.instanceTransforms.size == 16) {
 						gl.disableVertexAttribArray(program.aloc.a_instanceTransform  );
 						gl.disableVertexAttribArray(program.aloc.a_instanceTransform+1);
 						gl.disableVertexAttribArray(program.aloc.a_instanceTransform+2);
@@ -1859,6 +1954,9 @@ void main() {
 						gl.vertexAttribDivisor(program.aloc.a_instanceTransform+1, 0);
 						gl.vertexAttribDivisor(program.aloc.a_instanceTransform+2, 0);
 						gl.vertexAttribDivisor(program.aloc.a_instanceTransform+3, 0);
+					} else {
+						gl.disableVertexAttribArray(program.aloc.a_instanceTransform);
+						gl.vertexAttribDivisor(program.aloc.a_instanceTransform, 0);
 					}
 				}
 			}
@@ -2282,6 +2380,7 @@ void main() {
 		{
 			opcode: "matWrapper",
 			blockType: BlockType.CONDITIONAL,
+			color1: "#aaaa11",
 			text: "wrapper",
 			def: function({}, util) {
 				if (util.stackFrame.undoWrapper) {
@@ -2549,6 +2648,7 @@ void main() {
 		{
 			opcode: "renderToCubeTexture",
 			blockType: BlockType.COMMAND,
+			color1: "#aa1111",
 			text: "render to cube texture [SIDE] of [NAME]",
 			arguments: {
 				SIDE: {
@@ -2565,14 +2665,24 @@ void main() {
 		{
 			opcode: "readRenderTarget",
 			blockType: BlockType.COMMAND,
-			text: "read current render target into [LIST]",
+			text: "read current render target into [DSTLIST]",
 			arguments: {
-				LIST: {
+				DSTLIST: {
 					type: ArgumentType.STRING,
 					menu: "lists"
 				}
 			},
-			def: function({NAME}) {}
+			def: function({DSTLIST}, {target}) {
+				const list = target.lookupVariableByNameAndType(Cast.toString(DSTLIST), "list");
+				if (!list) return;
+				const width  = currentRenderTarget.width;
+				const height = currentRenderTarget.height;
+				if (width == 0 || height == 0) return;
+				const pixels = new Uint8ClampedArray(width * height * 4);
+				gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+				list.value = Array.from(pixels);
+				list._monitorUpToDate = false;
+			}
 		},
 		{
 			opcode: "renderTargetInfo",
@@ -2775,16 +2885,16 @@ void main() {
 							"exists",
 							"inherits from",
 							"is inherited by",
-							"has vertex indices",
+/*							"has vertex indices",
 							"has positions",
 							"has colors",
 							"has texture coords",
 							"has texture",
 							"has bones",
-							"has bone indices/weights",
+							"has bone indices/weights",*/
 							"texture width",
 							"texture height",
-							"texture stores depth",
+/*							"texture stores depth",
 							"texture depth write",
 							"texture depth test",
 							"texture is 2D",
@@ -2793,7 +2903,7 @@ void main() {
 							"primitives",
 							"blending",
 							"culling",
-							"transparent pixel handling",
+							"transparent pixel handling",*/
 						]
 					},
 					axis: {
@@ -2884,12 +2994,16 @@ void main() {
 					},
 					instanceProperty: {
 						acceptReporters: false,
-						items: ["transforms", "positions", "UV offsets", "colors"]
+						items: ["transforms", "positions", "positions and sizes"], //"UV offsets", "colors"]
 					},
 					renderTargetProperty: {
 						acceptReporters: false,
 						items: ["width", "height", "depth test", "depth write", "has depth storage", "image as data URI"]
-					}
+					},
+					powersOfTwo: {
+						acceptReporters: true,
+						items: ["1", "2", "4", "8", "16"]
+					},
 				}
 			};
 
