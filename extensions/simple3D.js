@@ -889,16 +889,13 @@ void main() {
 #endif
 	pos = u_model * pos;
 #ifdef INSTANCE_POS_SCALE
-	pos *= a_instanceTransform.w;
+	pos.xyz *= a_instanceTransform.w;
 #endif
 #ifdef BILLBOARD
 	vec4 pos2 = pos;
 	pos = vec4(0,0,0,1);
 #endif
-#ifdef INSTANCE_POS
-	pos.xyz += a_instanceTransform.xyz;
-#endif
-#ifdef INSTANCE_POS_SCALE
+#if defined(INSTANCE_POS) || defined(INSTANCE_POS_SCALE)
 	pos.xyz += a_instanceTransform.xyz;
 #endif
 #ifdef INSTANCE_MATRIX
@@ -1122,6 +1119,15 @@ void main() {
 			}
 		},
 		"---",*/
+		{
+			blockType: BlockType.BUTTON,
+			text: "Download sample project",
+			opcode: "getSampleProject",
+			func: "getSampleProject",
+			def: function() {
+				Scratch.openWindow("https://github.com/Xeltalliv/extensions/blob/simple3d-dev/samples/s3dsample.sb3")
+			}
+		},
 		{
 			opcode: "resetEverything",
 			blockType: BlockType.COMMAND,
