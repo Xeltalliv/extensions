@@ -248,6 +248,8 @@
 		throw new Error("Simple 3D extension must be run unsandboxed");
 	}
 
+	setTimeout(() => alert("Simple3D extension is unfinished. Use at your own risk. It's extension id as well as some blocks is subject to change. Any projects made with the current version WILL BREAK in the future. You've been warned, don't ask for help when that does eventually happen."), 2000);
+
 	const ArgumentType = Scratch.ArgumentType;
 	const BlockType = Scratch.BlockType;
 	const Cast = Scratch.Cast;
@@ -298,6 +300,8 @@
 	let currentBlendingProps = [null, null, null, null];
 	let currentCulling = 0;
 	let currentCullingProps = [null, null];
+	const publicApi = runtime.ext_xeltallivsimple3d ?? (runtime.ext_xeltallivsimple3d = {});
+	const externalTransforms = publicApi.externalTransforms ?? (publicApi.externalTransforms = {});
 
 	window.gl = gl; //!!!!!
 	gl.enable(gl.DEPTH_TEST);
@@ -328,9 +332,15 @@
 	}
 	gl.__proto__ = ogl; //*/
 
+	class Logger {
+		static error(text, util, returnVal) {
+			vm.getAddonBlock(unescape("%u200B%u200Berror%u200B%u200B%20%25s"))?.callback({content: text}, util);
+			return returnVal;
+		}
+	}
 
 	let meshes = new Map();
-	let canvasSizeTextures = new Set();
+	let canvasSizeTextureSides = new Set();
 	class Buffer {
 		constructor() {
 			this.buffer = gl.createBuffer();
@@ -369,7 +379,6 @@
 			super();
 			this.depthTest = true;
 			this.depthWrite = true;
-			this.depthTexture = true;
 		}
 		get width() {
 			return canvas.width;
@@ -388,12 +397,10 @@
 			return true;
 		}
 	}
-	class Texture extends RenderTarget {
-		constructor() {
-			super();
+	class Texture {
+		constructor(target) {
+			this.target = target;
 			this.texture = gl.createTexture();
-			this.depthTexture = null;
-			this.framebuffer = null;
 			this.width = 0;
 			this.height = 0;
 			this.depthTest = false;
@@ -402,8 +409,13 @@
 			this.filter = gl.NEAREST;
 			this.mipFilter = gl.NEAREST;
 			this.mipEnabled = false;
+			this.hasMipmap = false; // anisotropy requires mipmap even when not using mipmap filtering
 			this.anisotropy = 1;
+			this.hasDepthBuffer = false;
 			this.update();
+		}
+		bindTexture() {
+			gl.bindTexture(this.target, this.texture);
 		}
 		update() {
 			let minFilter = this.filter;
@@ -411,77 +423,140 @@
 				const lookup = [[gl.NEAREST_MIPMAP_NEAREST, gl.NEAREST_MIPMAP_LINEAR], [gl.LINEAR_MIPMAP_NEAREST, gl.LINEAR_MIPMAP_LINEAR]];
 				minFilter = lookup[+(this.filter == gl.LINEAR)][+(this.mipFilter == gl.LINEAR)];
 			}
-			gl.bindTexture(gl.TEXTURE_2D, this.texture);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, this.wrap);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, this.wrap);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, minFilter);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, this.filter);
+			gl.bindTexture(this.target, this.texture);
+			gl.texParameteri(this.target, gl.TEXTURE_WRAP_S, this.wrap);
+			gl.texParameteri(this.target, gl.TEXTURE_WRAP_T, this.wrap);
+			gl.texParameteri(this.target, gl.TEXTURE_MIN_FILTER, minFilter);
+			gl.texParameteri(this.target, gl.TEXTURE_MAG_FILTER, this.filter);
 		}
-		isPowerOf2() {
-			return ((this.width & (this.width - 1)) == 0) && ((this.height & (this.height - 1)) == 0);
-		}
-		setTexture(data, width, height, wrap, filter) {
-			gl.bindTexture(gl.TEXTURE_2D, this.texture);
-			if (data instanceof HTMLImageElement || data instanceof HTMLCanvasElement) {
-				gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, data);
-			} else {
-				gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+		setTextureProps(side, width, height, wrap, filter) {
+			if (this.width !== width || this.height !== height) {
+				for (const otherSide of this.sides) {
+					if (otherSide !== side) otherSide.resetTexture(width, height);
+				}
 			}
 			this.width = width;
 			this.height = height;
 			this.wrap = wrap;
 			this.filter = filter;
-			if (!this.isPowerOf2()) {
-				this.mipEnabled = false;
-				this.wrap = gl.CLAMP_TO_EDGE;
-			}
 			this.update();
-			if (this.mipEnabled) {
-				gl.generateMipmap(gl.TEXTURE_2D);
-			}
-			if (ext_af) gl.texParameterf(gl.TEXTURE_2D, ext_af.TEXTURE_MAX_ANISOTROPY_EXT, this.anisotropy);
-			if (this.depthTexture) {
-				gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthTexture);
-				gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, this.width, this.height);
-			}
+			if (this.mipEnabled) gl.generateMipmap(this.target);
+			if (ext_af) gl.texParameterf(this.target, ext_af.TEXTURE_MAX_ANISOTROPY_EXT, this.anisotropy);
 		}
 		setMipmapState(enabled, filter) {
+			if (enabled) gl.generateMipmap(this.target);
 			const genMip = !this.mipEnabled && enabled;
 			this.mipEnabled = enabled;
 			this.mipFilter = filter;
 			this.update();
-			if (genMip) gl.generateMipmap(gl.TEXTURE_2D);
 		}
 		setAnisotropy(value) {
 			if (!ext_af) return;
+			if (!this.hasMipmap && value > 1) {
+				this.hasMipmap = true;
+				gl.generateMipmap(gl.TEXTURE_2D);
+			}
 			this.anisotropy = value;
 			gl.bindTexture(gl.TEXTURE_2D, this.texture);
 			gl.texParameterf(gl.TEXTURE_2D, ext_af.TEXTURE_MAX_ANISOTROPY_EXT, value);
+		}
+		setDepth(test, write) {
+			this.depthTest = test;
+			this.depthWrite = write;
+			if (!this.hasDepthBuffer && write) {
+				this.hasDepthBuffer = true;
+				for (let side of this.sides) {
+					side.createDepthBuffer();
+				}
+			}
+		}
+		destroy() {
+			gl.deleteTexture(this.texture);
+			for (let side of this.sides) side.destroy();
+		}
+	}
+	class Texture2D extends Texture {
+		constructor() {
+			super(gl.TEXTURE_2D);
+			this.main = new TextureSide(this, gl.TEXTURE_2D);
+			this.sides = [this.main];
+		}
+	}
+	class TextureCube extends Texture {
+		constructor() {
+			super(gl.TEXTURE_CUBE_MAP);
+			this.xpos = new TextureSide(this, gl.TEXTURE_CUBE_MAP_POSITIVE_X);
+			this.xneg = new TextureSide(this, gl.TEXTURE_CUBE_MAP_NEGATIVE_X);
+			this.ypos = new TextureSide(this, gl.TEXTURE_CUBE_MAP_POSITIVE_Y);
+			this.yneg = new TextureSide(this, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y);
+			this.zpos = new TextureSide(this, gl.TEXTURE_CUBE_MAP_POSITIVE_Z);
+			this.zneg = new TextureSide(this, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z);
+			this.sides = [this.xpos, this.xneg, this.ypos, this.yneg, this.zpos, this.zneg];
+		}
+	}
+	class TextureSide extends RenderTarget {
+		constructor(shared, target) {
+			super();
+			this.shared = shared;
+			this.target = target;
+			this.depthTexture = null;
+			this.framebuffer = null;
+		}
+		resetTexture(width, height) {
+			gl.texImage2D(this.target, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+			if (this.depthTexture) {
+				gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthTexture);
+				gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, width, height);
+			}
+		}
+		setTexture(data, width, height, wrap, filter) {
+			this.shared.bindTexture();
+			if (data instanceof HTMLImageElement || data instanceof HTMLCanvasElement) {
+				gl.texImage2D(this.target, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, data);
+			} else {
+				gl.texImage2D(this.target, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+			}
+			this.shared.setTextureProps(this, width, height, wrap, filter);
+			if (this.depthTexture) {
+				gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthTexture);
+				gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, width, height);
+			}
 		}
 		getFramebuffer() {
 			if (this.framebuffer) return this.framebuffer;
 			this.framebuffer = gl.createFramebuffer();
 			gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texture, 0);
+			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.shared.texture, 0);
 			return this.framebuffer;
 		}
-		setDepth(test, write) {
-			this.depthTest = test;
-			this.depthWrite = write;
-			if (this.depthTexture == null && write) {
-				const framebuffer = this.getFramebuffer();
-				gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-				this.depthTexture = gl.createRenderbuffer();
-				gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthTexture);
-				gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, this.width, this.height);
-				gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.depthTexture);
-			}
+		createDepthBuffer() {
+			const framebuffer = this.getFramebuffer();
+			gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+			this.depthTexture = gl.createRenderbuffer();
+			gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthTexture);
+			gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, this.width, this.height);
+			gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.depthTexture);
 		}
-		hasDepthBuffer() {
-			return !!this.depthTexture;
+		get depthTest() {
+			return this.shared.depthTest;
+		}
+		get depthWrite() {
+			return this.shared.depthWrite;
+		}
+		get width() {
+			return this.shared.width;
+		}
+		get height() {
+			return this.shared.height;
+		}
+		get hasDepthBuffer() {
+			return this.shared.hasDepthBuffer;
+		}
+		setDepth(test, write) {
+			this.shared.setDepth(test, write);
 		}
 		destroy() {
-			gl.deleteTexture(this.texture);
+			canvasSizeTextureSides.delete(this);
 			if (this.depthTexture) gl.deleteRenderbuffer(this.depthTexture);
 			if (this.framebuffer) gl.deleteFramebuffer(this.framebuffer);
 		}
@@ -533,6 +608,110 @@
 				otherMesh.update();
 			}
 			//TODO: continue
+		}
+	}
+	class OffModelImporter {
+		constructor(dataRaw) {
+			const dataStr = dataRaw.map(str => str.replaceAll("\t", " ").trim()).filter(str => str.length && str[0] !== "#");
+			const dataArr = dataStr.map(str => str.split(" ").filter(e => e).map(e => +e));
+			let i = 0;
+			if (dataStr[i] == "OFF") i++;
+			if (dataArr[i].length !== 3) return false;
+			const [vertexCount, faceCount, edgeCount] = dataArr[i]; i++;
+			const vertices = dataArr.slice(i, i+vertexCount); i += vertexCount;
+			const faces = dataArr.slice(i, i+faceCount); i += faceCount;
+			this.vertices = vertices;
+			this.output = {
+				xyz: [],
+				rgba: []
+			}
+			for(const face of faces) {
+				this.addPoly(face.slice(1, 1+face[0]), face.slice(1+face[0]));
+			}
+			let hasColor = false;
+			const rgba = this.output.rgba;
+			for(let i=0; i<rgba.length; i++) {
+				if (rgba[i] < 1) {
+					hasColor = true;
+					break;
+				}
+			}
+			if (!hasColor) delete this.output.rgba;
+		}
+		addPoly(vs, fallback) {
+			if (fallback.length == 3) fallback.push(1);
+			for(let i=2; i<vs.length; i++) {
+				this.addVertex(vs[  0], fallback);
+				this.addVertex(vs[i-1], fallback);
+				this.addVertex(vs[  i], fallback);
+			}
+		}
+		addVertex(idx, fallback) {
+			const v = this.vertices[idx];
+			this.output.xyz.push(v[0], v[1], v[2]);
+			this.output.rgba.push(v[3] ?? fallback[0], v[4] ?? fallback[1] ?? 1, v[5] ?? fallback[2] ?? 1, v[6] ?? fallback[3] ?? 1);
+		}
+	}
+	class ObjModelImporter {
+		constructor(dataRaw) {
+			const dataStr = dataRaw.map(str => str.replaceAll("\t", " ").trim()).filter(str => str.length && str[0] !== "#");
+			const dataArr = dataStr.map(str => str.split(" ").filter(e => e));
+			const materials = {" ": [1,1,1,1]};
+			let materialLast = " ";
+			let materialUsed = " ";
+			const vertPos = this.vertPos = [null];
+			const vertUV = this.vertUV = [null];
+			this.output = {
+				xyz: [],
+				rgba: []
+			}
+			for(let i=0; i<dataArr.length; i++) {
+				const arr = dataArr[i];
+				console.log(arr);
+				if (arr[0] == "v") {
+					vertPos.push(arr.slice(1).map(Number));
+				}
+				if (arr[0] == "vt") {
+					vertUV.push([+arr[1], +arr[2]]);
+				}
+				if (arr[0] == "f") {
+					this.addPoly(arr.slice(1).map(e => e.split("/").map(Number)), materials[materialUsed]);
+				}
+				if (arr[0] == "usemtl") {
+					materialUsed = materials[arr[1]] ? arr[1] : " ";
+				}
+				if (arr[0] == "newmtl") {
+					materialLast = arr[1];
+					materials[materialLast] = [1,1,1,1];
+				}
+				if (arr[0] == "Ka") {
+					const color = materials[materialLast];
+					color[0] = +arr[1];
+					color[1] = +arr[2];
+					color[2] = +arr[3];
+				}
+				if (arr[0] == "d") {
+					const color = materials[materialLast];
+					color[3] = +arr[1];
+				}
+				if (arr[0] == "Tr") {
+					const color = materials[materialLast];
+					color[3] = 1 - arr[1];
+				}
+			}
+		}
+		addPoly(vs, fallback) {
+			for(let i=2; i<vs.length; i++) {
+				this.addVertex(vs[  0][0], vs[  0][1], fallback);
+				this.addVertex(vs[i-1][0], vs[i-1][1], fallback);
+				this.addVertex(vs[  i][0], vs[  i][1], fallback);
+			}
+		}
+		addVertex(idx, idxUV, fallback) {
+			const v = this.vertPos[idx>0 ? idx : this.vertPos.length+idx];
+			const u = this.vertUV[idxUV>0 ? idxUV : this.vertUV.length+idxUV];
+			this.output.xyz.push(v[0], v[1], v[2]);
+			this.output.rgba.push(v[3] ?? fallback[0], v[4] ?? fallback[1] ?? 1, v[5] ?? fallback[2] ?? 1, v[6] ?? fallback[3] ?? 1);
 		}
 	}
 	canvasRenderTarget = new CanvasRenderTarget();
@@ -598,8 +777,8 @@
 				canvas.width  = this._nativeSize[0];
 				canvas.height = this._nativeSize[1];
 			}
-			canvasSizeTextures.forEach(t => t.setTexture(null, canvas.width, canvas.height, t.wrap, t.filter));
-			if (currentRenderTarget == canvasRenderTarget || canvasSizeTextures.has(currentRenderTarget)) currentRenderTarget.updateViewport();
+			canvasSizeTextureSides.forEach(t => t.resetTexture(canvas.width, canvas.height));
+			if (currentRenderTarget == canvasRenderTarget || canvasSizeTextureSides.has(currentRenderTarget)) currentRenderTarget.updateViewport();
 			this.updateContent();
 		}
 		onNativeSizeChanged(event) {
@@ -635,13 +814,18 @@
 	}
 
 
-
 	const vshSrc = `
 precision highp float;
 
 in vec4 a_position;
 in vec4 a_color;
+#ifdef TEXTURES
+#if TEXTURES == 2
 in vec2 a_uv;
+#elif TEXTURES == 3
+in vec3 a_uv;
+#endif
+#endif
 #ifdef SKINNING
 #if SKINNING == 1
 in float a_index;
@@ -667,7 +851,13 @@ in mat4 a_instanceTransform;
 #endif
 
 out vec4 v_color;
+#ifdef TEXTURES
+#if TEXTURES == 2
 out vec2 v_uv;
+#elif TEXTURES == 3
+out vec3 v_uv;
+#endif
+#endif
 out vec3 v_viewpos;
 
 uniform mat4 u_projection;
@@ -718,13 +908,21 @@ void main() {
 #ifdef BILLBOARD
 	view += pos2;
 #endif
+#ifdef TEXTURES
+#if TEXTURES == 2
 	vec2 uv = a_uv;
 #ifdef UV_OFFSET
 	uv += u_uvOffset;
 #endif
+#elif TEXTURES == 3
+	vec3 uv = a_uv;
+#endif
+#endif
 	gl_Position = u_projection * view;
 	v_color = a_color;
+#ifdef TEXTURES
 	v_uv = uv;
+#endif
 	v_viewpos = view.xyz;
 }
 `;
@@ -733,12 +931,24 @@ void main() {
 precision mediump float;
 
 in vec4 v_color;
+#ifdef TEXTURES
+#if TEXTURES == 2
 in vec2 v_uv;
+#elif TEXTURES == 3
+in vec3 v_uv;
+#endif
+#endif
 in vec3 v_viewpos;
 
 out vec4 outColor;
 
+#ifdef TEXTURES
+#if TEXTURES == 2
 uniform sampler2D u_texture;
+#elif TEXTURES == 3
+uniform samplerCube u_texture;
+#endif
+#endif
 uniform vec4 u_color_mul;
 uniform vec4 u_color_add;
 uniform vec3 u_fog_color;
@@ -1076,7 +1286,7 @@ void main() {
 					defaultValue: "my mesh"
 				},
 			},
-			def: function({NAME, PROP}) {
+			def: function({NAME, PROP}) { // TODO: switch statement/lookup of functions
 				const mesh = meshes.get(Cast.toString(NAME));
 				if (PROP == "exists") {
 					return !!mesh;
@@ -1095,6 +1305,26 @@ void main() {
 				if (PROP == "texture height") {
 					const texture = mesh.data.texture;
 					if (texture) return texture.height;
+				}
+				if (PROP == "texture stores depth") {
+					const texture = mesh.data.texture;
+					if (texture) return texture.hasDepthBuffer;
+				}
+				if (PROP == "texture depth write") {
+					const texture = mesh.data.texture;
+					if (texture) return texture.depthWrite;
+				}
+				if (PROP == "texture depth test") {
+					const texture = mesh.data.texture;
+					if (texture) return texture.depthTest;
+				}
+				if (PROP == "texture is 2D") {
+					const texture = mesh.data.texture;
+					return texture instanceof Texture2D;
+				}
+				if (PROP == "texture is cube") {
+					const texture = mesh.data.texture;
+					return texture instanceof TextureCube;
 				}
 				return "";
 			}
@@ -1324,20 +1554,17 @@ void main() {
 				const texture = Cast.toString(TEXTURE);
 				const wrap = Cast.toString(WRAP) == "repeat" ? gl.REPEAT : gl.CLAMP_TO_EDGE;
 				const filter = Cast.toString(FILTER) == "blurred" ? gl.LINEAR : gl.NEAREST;
-/*				if (mesh.myData.cubeTexture) {
-					mesh.myData.cubeTexture.destroy();
-					mesh.myData.cubeTexture = null;
-				}*/
-				let textureObj = mesh.myData.texture ?? (mesh.myData.texture = new Texture());
+				let textureObj = mesh.myData.texture ?? (mesh.myData.texture = new Texture2D());
+				if (!(textureObj instanceof Texture2D)) return;
 				mesh.update();
 				const onData = function(data) {
 					if (data == null || mesh.destroyed) return;
 					if (data.canvasSize) {
-						canvasSizeTextures.add(textureObj);
+						canvasSizeTextureSides.add(textureObj.main);
 					} else {
-						canvasSizeTextures.delete(textureObj);
+						canvasSizeTextureSides.delete(textureObj.main);
 					}
-					textureObj.setTexture(data.data, data.width, data.height, wrap, filter);
+					textureObj.main.setTexture(data.data, data.width, data.height, wrap, filter);
 				}
 				if (imageSourceSync) {
 					onData(imageSourceSync);
@@ -1349,7 +1576,6 @@ void main() {
 		{
 			opcode: "setMeshTexCoordUVW",
 			blockType: BlockType.COMMAND,
-			color1: "#aa1111",
 			text: "set [NAME] cube texture coordinates UVW [U] [V] [W]",
 			arguments: {
 				NAME: {
@@ -1384,7 +1610,6 @@ void main() {
 		{
 			opcode: "setMeshCubeTexture",
 			blockType: BlockType.COMMAND,
-			color1: "#aa1111",
 			text: "set [NAME] cube texture [SIDE] [TEXTURE] [WRAP] [FILTER]",
 			arguments: {
 				NAME: {
@@ -1408,26 +1633,32 @@ void main() {
 				},
 			},
 			def: function({NAME, SIDE, TEXTURE, WRAP, FILTER}, {target}) {
-/*				const mesh = meshes.get(Cast.toString(NAME));
+				const mesh = meshes.get(Cast.toString(NAME));
 				if (!mesh) return;
 				const texture = Cast.toString(TEXTURE);
 				const wrap = Cast.toString(WRAP) == "repeat" ? gl.REPEAT : gl.CLAMP_TO_EDGE;
 				const filter = Cast.toString(FILTER) == "blurred" ? gl.LINEAR : gl.NEAREST;
-				if (mesh.myData.texture) {
-					mesh.myData.texture.destroy();
-					mesh.myData.texture = null;
-				}
-				let textureObj = mesh.myData.cubeTexture ?? (mesh.myData.cubeTexture = new Texture());
+				let textureObj = mesh.myData.texture ?? (mesh.myData.texture = new TextureCube());
+				if (!(textureObj instanceof TextureCube)) return;
 				mesh.update();
 				const onData = function(data) {
 					if (data == null || mesh.destroyed) return;
-					textureObj.setCubeTexture(SIDE, data.data, data.width, data.height, wrap, filter);
+					const lookup = {
+						"X+": "xpos",
+						"X-": "xneg",
+						"Y+": "ypos",
+						"Y-": "yneg",
+						"Z+": "zpos",
+						"Z-": "zneg",
+					}
+					if (!lookup[SIDE]) return;
+					textureObj[lookup[SIDE]].setTexture(data.data, data.width, data.height, wrap, filter);
 				}
 				if (imageSourceSync) {
 					onData(imageSourceSync);
 				} else {
 					imageSource.then(onData);
-				}*/
+				}
 			}
 		},
 		{
@@ -1599,8 +1830,7 @@ void main() {
 		{
 			opcode: "setMeshFromFile",
 			blockType: BlockType.COMMAND,
-			color1: "#aa1111",
-			text: "set [NAME] from [FILETYPE] [LIST]",
+			text: "set [NAME] from [FILETYPE] [SRCLIST]",
 			arguments: {
 				NAME: {
 					type: ArgumentType.STRING,
@@ -1610,12 +1840,59 @@ void main() {
 					type: ArgumentType.STRING,
 					menu: "filetype"
 				},
-				LIST: {
+				SRCLIST: {
 					type: ArgumentType.STRING,
 					menu: "lists"
 				},
 			},
-			def: function({NAME}, {target}) {
+			def: function({NAME, FILETYPE, SRCLIST}, {target}) {
+				const mesh = meshes.get(Cast.toString(NAME));
+				const list = target.lookupVariableByNameAndType(SRCLIST, "list");
+				if (!mesh || !list) return;
+				let model = null;
+				if (FILETYPE == "obj mtl") model = new ObjModelImporter(list.value);
+				if (FILETYPE == "off") model = new OffModelImporter(list.value);
+				console.log("model", model);
+				if (!model) return;
+				if (model.output.xyz) {
+					const xyz = model.output.xyz;
+					const mat = transforms.import;
+					let needsScaling = false;
+					for(let i=0; i<16; i++) {
+						if (mat[i] !== +(i%5 == 0)) needsScaling = true;
+					}
+					if (needsScaling) {
+						for(let i=0; i<xyz.length; i+=3) {
+							const out = m4.multiplyVec(mat, [xyz[i], xyz[i+1], xyz[i+2], 1]);
+							xyz[i  ] = out[0];
+							xyz[i+1] = out[1];
+							xyz[i+2] = out[2];
+						}
+					}
+					const value = new Float32Array(model.output.xyz);
+					const buffer = mesh.myBuffers.position ?? (mesh.myBuffers.position = new Buffer());
+					gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
+					gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
+					buffer.size = 3;
+					buffer.length = value.length / 3;
+				}
+				if (model.output.rgba) {
+					const value = new Uint8Array(model.output.rgba.map(n => n*255));
+					const buffer = mesh.myBuffers.colors ?? (mesh.myBuffers.colors = new Buffer());
+					gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
+					gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
+					buffer.size = 4;
+					buffer.length = value.length / 4;
+				}
+				if (model.output.uv) {
+					const value = new Float32Array(model.output.uv);
+					const buffer = mesh.myBuffers.texCoords ?? (mesh.myBuffers.texCoords = new Buffer());
+					gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
+					gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
+					buffer.size = 2;
+					buffer.length = value.length / 2;
+				}
+				mesh.update();
 				//TODO
 			}
 		},
@@ -1738,6 +2015,34 @@ void main() {
 			}
 		},
 		{
+			opcode: "setMeshDrawRange",
+			blockType: BlockType.COMMAND,
+			text: "set [NAME] vertex draw range from [START] to [END]",
+			arguments: {
+				NAME: {
+					type: ArgumentType.STRING,
+					defaultValue: "my mesh"
+				},
+				START: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 1
+				},
+				END: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 6
+				},
+			},
+			def: function({NAME, START, END}, {target}) {
+				const mesh = meshes.get(Cast.toString(NAME));
+				const start = Cast.toNumber(START)-1;
+				const end = Cast.toNumber(END);
+				if (!mesh) return;
+				mesh.myData.drawStart = start;
+				mesh.myData.drawAmount = Math.max(0, end-start);
+				mesh.update();
+			}
+		},
+		{
 			opcode: "setMeshTexCoordOffsetUV",
 			blockType: BlockType.COMMAND,
 			text: "set [NAME] texture coordinate offset UV [U] [V]",
@@ -1786,7 +2091,7 @@ void main() {
 
 				let flags = [];
 				if (mesh.buffers.colors) flags.push("COLORS");
-				if (mesh.buffers.texCoords) flags.push("TEXTURES");
+				if (mesh.buffers.texCoords) flags.push(`TEXTURES ${mesh.buffers.texCoords.size}`);
 				if (fogEnabled) flags.push("FOG");
 				if (mesh.buffers.boneIndices && mesh.bonesDiff) {
 					flags.push(`SKINNING ${mesh.buffers.boneIndices.size}`);
@@ -1890,7 +2195,7 @@ void main() {
 
 				if (mesh.buffers.texCoords) {
 					gl.activeTexture(gl.TEXTURE0);
-					gl.bindTexture(gl.TEXTURE_2D, mesh.data.texture?.texture ?? texture);
+					gl.bindTexture(mesh.data.texture?.target ?? gl.TEXTURE_2D, mesh.data.texture?.texture ?? texture);
 					gl.uniform1i(program.uloc.u_texture, 0);
 				}
 
@@ -1915,19 +2220,25 @@ void main() {
 				gl.uniformMatrix4fv(program.uloc.u_view, false, transforms.worldToView);
 				gl.uniformMatrix4fv(program.uloc.u_model, false, transforms.modelToWorld);
 
+				let start = 0;
+				let amount = mesh.buffers.indices ? mesh.buffers.indices.length : length;
+				if (mesh.data.drawRange) {
+					start = mesh.data.drawRange[0];
+					amount = mesh.data.drawRange[1];
+				}
 				if (mesh.buffers.instanceTransforms) {
 					if (mesh.buffers.indices) {
 						const indexTypes = [null, gl.UNSIGNED_BYTE, gl.UNSIGNED_SHORT, null, gl.UNSIGNED_INT];
-						gl.drawElementsInstanced(mesh.data.primitives ?? gl.TRIANGLES, mesh.buffers.indices.length, indexTypes[mesh.buffers.indices.size], 0, mesh.buffers.instanceTransforms.length);
+						gl.drawElementsInstanced(mesh.data.primitives ?? gl.TRIANGLES, amount, indexTypes[mesh.buffers.indices.size], start, mesh.buffers.instanceTransforms.length);
 					} else {
-						gl.drawArraysInstanced(mesh.data.primitives ?? gl.TRIANGLES, 0, length, mesh.buffers.instanceTransforms.length);
+						gl.drawArraysInstanced(mesh.data.primitives ?? gl.TRIANGLES, start, amount, mesh.buffers.instanceTransforms.length);
 					}
 				} else {
 					if (mesh.buffers.indices) {
 						const indexTypes = [null, gl.UNSIGNED_BYTE, gl.UNSIGNED_SHORT, null, gl.UNSIGNED_INT];
-						gl.drawElements(mesh.data.primitives ?? gl.TRIANGLES, mesh.buffers.indices.length, indexTypes[mesh.buffers.indices.size], 0);
+						gl.drawElements(mesh.data.primitives ?? gl.TRIANGLES, amount, indexTypes[mesh.buffers.indices.size], start);
 					} else {
-						gl.drawArrays(mesh.data.primitives ?? gl.TRIANGLES, 0, length);
+						gl.drawArrays(mesh.data.primitives ?? gl.TRIANGLES, start, amount);
 					}
 				}
 				renderer.dirty = true;   //TODO: only if canvas (framebuffer is null)
@@ -2277,6 +2588,21 @@ void main() {
 			text: "start with no transformation",
 			def: function() {
 				transforms[selectedTransform] = m4.identity();
+			}
+		},
+		{
+			opcode: "matStartWithExternal",
+			blockType: BlockType.COMMAND,
+			text: "start with [SOURCE]",
+			arguments: {
+				SOURCE: {
+					type: ArgumentType.STRING,
+					menu: "externalTransforms"
+				}
+			},
+			def: function({SOURCE}, util) {
+				const src = externalTransforms[SOURCE];
+				if (src) transforms[selectedTransform] = src.get() ?? m4.identity();
 			}
 		},
 		{
@@ -2643,13 +2969,13 @@ void main() {
 				const mesh = meshes.get(Cast.toString(NAME));
 				if (!mesh) return;
 				if (!mesh.data.texture) return;
-				mesh.data.texture.setAsRenderTarget();
+				if (!mesh.data.texture instanceof Texture2D) return;
+				mesh.data.texture.main.setAsRenderTarget();
 			}
 		},
 		{
 			opcode: "renderToCubeTexture",
 			blockType: BlockType.COMMAND,
-			color1: "#aa1111",
 			text: "render to cube texture [SIDE] of [NAME]",
 			arguments: {
 				SIDE: {
@@ -2661,7 +2987,22 @@ void main() {
 					defaultValue: "my mesh"
 				},
 			},
-			def: function({}) {}
+			def: function({SIDE, NAME}) {
+				const mesh = meshes.get(Cast.toString(NAME));
+				if (!mesh) return;
+				if (!mesh.data.texture) return;
+				if (!mesh.data.texture instanceof TextureCube) return;
+				const lookup = {
+					"X+": "xpos",
+					"X-": "xneg",
+					"Y+": "ypos",
+					"Y-": "yneg",
+					"Z+": "zpos",
+					"Z-": "zneg"
+				}
+				if (!lookup[SIDE]) return;
+				mesh.data.texture[lookup[SIDE]].setAsRenderTarget();
+			}
 		},
 		{
 			opcode: "readRenderTarget",
@@ -2853,6 +3194,10 @@ void main() {
 						acceptReporters: true,
 						items: "costumes"
 					},
+					externalTransforms: {
+						acceptReporters: true,
+						items: "externalTransforms"
+					},
 					clearLayers: {
 						acceptReporters: false,
 						items: [
@@ -2895,12 +3240,12 @@ void main() {
 							"has bone indices/weights",*/
 							"texture width",
 							"texture height",
-/*							"texture stores depth",
+							"texture stores depth",
 							"texture depth write",
 							"texture depth test",
 							"texture is 2D",
 							"texture is cube",
-							"texture has stage size",
+/*							"texture has stage size",
 							"primitives",
 							"blending",
 							"culling",
@@ -2980,7 +3325,7 @@ void main() {
 					},
 					filetype: {
 						acceptReporters: false,
-						items: [".obj .mtl", ".off"]
+						items: ["obj mtl", "off"]
 					},
 					globalColor: {
 						acceptReporters: false,
@@ -3010,6 +3355,7 @@ void main() {
 
 	class Extension {
 		getInfo() {
+			definitions.find(b => b.opcode == "matStartWithExternal").hideFromPalette = Object.keys(externalTransforms).length == 0;
 			return extInfo;
 		}
 		listsMenu() {
@@ -3022,21 +3368,21 @@ void main() {
 			if (all.length == 0) return ["list"];
 			return all;
 		}
-		texturesMenu() {
-			const stage = vm.runtime.getTargetForStage();
-			const editingTarget = vm.editingTarget;
-			const listsLocal = editingTarget ? Object.values(editingTarget.variables).filter(v => v.type == "list").map(v => "list:"+v.name) : [];
-			const listsGlobal = stage ? Object.values(stage.variables).filter(v => v.type == "list").map(v => "list:"+v.name) : [];
-			const costumes = editingTarget ? editingTarget.getCostumes().map(e => "costume:"+e.name) : [];
-			const all = [...costumes, ...listsLocal, ...listsGlobal];
-			all.sort();
-			if (all.length == 0) return ["empty"];
-			return all;
-		}
 		costumes() {
 			let editingTarget = vm.editingTarget;
 			if (editingTarget) return editingTarget.getCostumes().map(e => e.name);
 			return ["costume 1"];
+		}
+		externalTransforms() {
+			const out = [];
+			for(let key in externalTransforms) {
+				out.push({
+					value: key,
+					text: externalTransforms[key].name
+				});
+			}
+			if (out.length == 0) out.push({value: "", text:"- no external sources -"});
+			return out;
 		}
 	}
 
