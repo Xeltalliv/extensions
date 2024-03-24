@@ -611,6 +611,10 @@
 			//TODO: continue
 		}
 	}
+	canvasRenderTarget = new CanvasRenderTarget();
+	currentRenderTarget = canvasRenderTarget;
+
+	const workerSrc = `
 	class OffModelImporter {
 		constructor(dataRaw) {
 			const dataStr = dataRaw.map(str => str.replaceAll("\t", " ").trim()).filter(str => str.length && str[0] !== "#");
@@ -715,9 +719,70 @@
 			this.output.rgba.push(v[3] ?? fallback[0], v[4] ?? fallback[1] ?? 1, v[5] ?? fallback[2] ?? 1, v[6] ?? fallback[3] ?? 1);
 		}
 	}
-	canvasRenderTarget = new CanvasRenderTarget();
-	currentRenderTarget = canvasRenderTarget;
-
+	onmessage = (evt) => {
+		const {type, array, importMatrix} = evt.data;
+		let output = null;
+		try {
+			let model = null;
+			if (type == "obj mtl") model = new ObjModelImporter(array);
+			if (type == "off") model = new OffModelImporter(array);
+			if (!model) return;
+			output = model.output;
+			if (output.xyz) {
+				const xyz = output.xyz;
+				let needsScaling = false;
+				for(let i=0; i<16; i++) {
+					if (importMatrix[i] !== +(i%5 == 0)) {
+						needsScaling = true;
+					}
+				}
+				const a = importMatrix;
+				if (needsScaling) {
+					for(let i=0; i<xyz.length; i+=3) {
+						xyz[i  ] = xyz[i] * a[0] + xyz[i+1] * a[4] + xyz[i+2] * a[8] + a[12];
+						xyz[i+1] = xyz[i] * a[1] + xyz[i+1] * a[5] + xyz[i+2] * a[9] + a[13];
+						xyz[i+2] = xyz[i] * a[2] + xyz[i+1] * a[6] + xyz[i+2] * a[10] + a[14];
+					}
+				}
+			}
+			if (output.rgba) {
+				const rgba = output.rgba;
+				for(let i=0; i<rgba.length; i++) {
+					rgba[i] *= 255;
+				}
+			}
+		} catch(e) {
+			output = null;
+			console.error(e);
+		}
+		postMessage(output);
+	}
+	`;
+	class ModelDecoder {
+		constructor() {
+			this.worker = null;
+			this.last = new Promise(res => res());
+			this.resolveFn = null;
+		}
+		async decode(type, array, importMatrix) {
+			if (!this.worker) {
+				this.worker = new Worker(`data:text/javascript;base64,${btoa(workerSrc)}`);
+				this.worker.onmessage = this.handle.bind(this);
+			}
+			let onceDone;
+			const previous = this.last;
+			this.last = new Promise(res => onceDone = res);
+			await previous;
+			this.worker.postMessage({type, array, importMatrix});
+			const output = await new Promise(res => this.resolveFn = res);
+			onceDone();
+			return output;
+		}
+		handle(output) {
+			this.resolveFn(output.data);
+		}
+	}
+	const modelDecoder = new ModelDecoder();
 
 	let skin = null;
 	let skinId = null;
@@ -1847,47 +1912,30 @@ void main() {
 					menu: "lists"
 				},
 			},
-			def: function({NAME, FILETYPE, SRCLIST}, {target}) {
+			def: async function({NAME, FILETYPE, SRCLIST}, {target}) {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const list = target.lookupVariableByNameAndType(SRCLIST, "list");
 				if (!mesh || !list) return;
-				let model = null;
-				if (FILETYPE == "obj mtl") model = new ObjModelImporter(list.value);
-				if (FILETYPE == "off") model = new OffModelImporter(list.value);
-				console.log("model", model);
-				if (!model) return;
-				if (model.output.xyz) {
-					const xyz = model.output.xyz;
-					const mat = transforms.import;
-					let needsScaling = false;
-					for(let i=0; i<16; i++) {
-						if (mat[i] !== +(i%5 == 0)) needsScaling = true;
-					}
-					if (needsScaling) {
-						for(let i=0; i<xyz.length; i+=3) {
-							const out = m4.multiplyVec(mat, [xyz[i], xyz[i+1], xyz[i+2], 1]);
-							xyz[i  ] = out[0];
-							xyz[i+1] = out[1];
-							xyz[i+2] = out[2];
-						}
-					}
-					const value = new Float32Array(model.output.xyz);
+				let output = await modelDecoder.decode(FILETYPE, list.value, transforms.import);
+				if (!output) return;
+				if (output.xyz) {
+					const value = new Float32Array(output.xyz);
 					const buffer = mesh.myBuffers.position ?? (mesh.myBuffers.position = new Buffer());
 					gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
 					gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
 					buffer.size = 3;
 					buffer.length = value.length / 3;
 				}
-				if (model.output.rgba) {
-					const value = new Uint8Array(model.output.rgba.map(n => n*255));
+				if (output.rgba) {
+					const value = new Uint8Array(output.rgba);
 					const buffer = mesh.myBuffers.colors ?? (mesh.myBuffers.colors = new Buffer());
 					gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
 					gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
 					buffer.size = 4;
 					buffer.length = value.length / 4;
 				}
-				if (model.output.uv) {
-					const value = new Float32Array(model.output.uv);
+				if (output.uv) {
+					const value = new Float32Array(output.uv);
 					const buffer = mesh.myBuffers.texCoords ?? (mesh.myBuffers.texCoords = new Buffer());
 					gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
 					gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
@@ -2690,7 +2738,6 @@ void main() {
 		{
 			opcode: "matWrapper",
 			blockType: BlockType.CONDITIONAL,
-			color1: "#aaaa11",
 			text: "wrapper",
 			def: function({}, util) {
 				if (util.stackFrame.undoWrapper) {
