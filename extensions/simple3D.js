@@ -340,7 +340,6 @@
 	}
 
 	let meshes = new Map();
-	let canvasSizeTextureSides = new Set();
 	class Buffer {
 		constructor() {
 			this.buffer = gl.createBuffer();
@@ -430,15 +429,16 @@
 			gl.texParameteri(this.target, gl.TEXTURE_MAG_FILTER, this.filter);
 		}
 		setTextureProps(side, width, height, wrap, filter) {
-			if (this.width !== width || this.height !== height) {
-				for (const otherSide of this.sides) {
-					if (otherSide !== side) otherSide.resetTexture(width, height);
-				}
-			}
+			const resize = this.width !== width || this.height !== height;
 			this.width = width;
 			this.height = height;
 			this.wrap = wrap;
 			this.filter = filter;
+			if (resize) {
+				for (const otherSide of this.sides) {
+					if (otherSide !== side) otherSide.resetTexture(width, height);
+				}
+			}
 			this.update();
 			if (this.mipEnabled) gl.generateMipmap(this.target);
 			if (ext_af) gl.texParameterf(this.target, ext_af.TEXTURE_MAX_ANISOTROPY_EXT, this.anisotropy);
@@ -508,6 +508,7 @@
 				gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthTexture);
 				gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, width, height);
 			}
+			if (currentRenderTarget == this) this.updateViewport();
 		}
 		setTexture(data, width, height, wrap, filter) {
 			this.shared.bindTexture();
@@ -521,6 +522,7 @@
 				gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthTexture);
 				gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, width, height);
 			}
+			if (currentRenderTarget == this) this.updateViewport();
 		}
 		getFramebuffer() {
 			if (this.framebuffer) return this.framebuffer;
@@ -556,7 +558,6 @@
 			this.shared.setDepth(test, write);
 		}
 		destroy() {
-			canvasSizeTextureSides.delete(this);
 			if (this.depthTexture) gl.deleteRenderbuffer(this.depthTexture);
 			if (this.framebuffer) gl.deleteFramebuffer(this.framebuffer);
 		}
@@ -777,8 +778,8 @@
 				canvas.width  = this._nativeSize[0];
 				canvas.height = this._nativeSize[1];
 			}
-			canvasSizeTextureSides.forEach(t => t.resetTexture(canvas.width, canvas.height));
-			if (currentRenderTarget == canvasRenderTarget || canvasSizeTextureSides.has(currentRenderTarget)) currentRenderTarget.updateViewport();
+			if (currentRenderTarget == canvasRenderTarget) currentRenderTarget.updateViewport();
+			runtime.startHats("simple3D_whenCanvasResized");
 			this.updateContent();
 		}
 		onNativeSizeChanged(event) {
@@ -1565,11 +1566,6 @@ void main() {
 				mesh.update();
 				const onData = function(data) {
 					if (data == null || mesh.destroyed) return;
-					if (data.canvasSize) {
-						canvasSizeTextureSides.add(textureObj.main);
-					} else {
-						canvasSizeTextureSides.delete(textureObj.main);
-					}
 					textureObj.main.setTexture(data.data, data.width, data.height, wrap, filter);
 				}
 				if (imageSourceSync) {
@@ -2501,25 +2497,6 @@ void main() {
 			}
 		},
 		{
-			opcode: "textureFromStageSize",
-			blockType: BlockType.REPORTER,
-			text: "texture of stage size",
-			disableMonitor: true,
-			def: function() {
-				let retStatus = "[texture data]";
-				imageSource = new Promise((resolve, reject) => {
-					imageSourceSync = {
-						width: canvasRenderTarget.width,
-						height: canvasRenderTarget.height,
-						data: null,
-						canvasSize: true
-					}
-					resolve(imageSourceSync);
-				});
-				return retStatus;
-			}
-		},
-		{
 			blockType: BlockType.LABEL,
 			text: "View transformations"
 		},
@@ -3173,6 +3150,32 @@ void main() {
 				fogDistance = [NEAR, FAR-NEAR];
 			}
 		},
+		{
+			blockType: BlockType.LABEL,
+			text: "Resolution changes"
+		},
+		{
+			opcode: "whenCanvasResized",
+			blockType: BlockType.EVENT,
+			text: "when resolution changes",
+			isEdgeActivated: false
+		},
+		{
+			opcode: "canvasWidth",
+			blockType: BlockType.REPORTER,
+			text: "stage width",
+			def: function() {
+				return canvas.width;
+			}
+		},
+		{
+			opcode: "canvasHeight",
+			blockType: BlockType.REPORTER,
+			text: "stage height",
+			def: function() {
+				return canvas.height;
+			}
+		}
 	]
 
 	let extInfo = {
