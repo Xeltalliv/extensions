@@ -282,7 +282,7 @@
 	//canvas.style.position = "absolute";
 	//canvas.style["z-index"] = 99999;
 	let gl = canvas.getContext("webgl2");
-	let Blendings = {
+	const Blendings = {
 		"overwrite color (fastest for opaque)": [false],
 		"default": [true, gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.FUNC_ADD],
 		"additive": [true, gl.ONE, gl.ONE, gl.FUNC_ADD],
@@ -291,11 +291,21 @@
 		"invert": [true, gl.ONE_MINUS_DST_COLOR, gl.ONE_MINUS_SRC_COLOR, gl.FUNC_ADD],
 		"invisible": [true, gl.ZERO, gl.ONE, gl.FUNC_ADD],
 	};
-	let Cullings = {
+	const Cullings = {
 		"nothing": [false],
 		"back faces": [true, gl.BACK],
 		"front faces": [true, gl.FRONT],
 	};
+	const DepthTests = {
+		"nothing": gl.NEVER,
+		"closer": gl.LESS,
+		"same": gl.EQUAL,
+		"further": gl.GREATER,
+		"closer or same": gl.LEQUAL,
+		"further or same": gl.GEQUAL,
+		"not same": gl.NOTEQUAL,
+		"everything": gl.ALWAYS
+	}
 	let currentBlending = "unset";
 	let currentBlendingProps = [null, null, null, null];
 	let currentCulling = 0;
@@ -361,12 +371,13 @@
 			gl.viewport(0, 0, this.width, this.height);
 		}
 		updateDepth() {
-			if (this.depthTest) {
-				gl.enable(gl.DEPTH_TEST);
-			} else {
+			if (this.depthTest == "everything" && !this.depthWrite) {
 				gl.disable(gl.DEPTH_TEST);
+			} else {
+				gl.enable(gl.DEPTH_TEST);
+				gl.depthFunc(DepthTests[this.depthTest]);
+				gl.depthMask(this.depthWrite);
 			}
-			gl.depthMask(this.depthWrite);
 		}
 		getAspectRatio() {
 			if (this.width == 0) return 1;
@@ -376,7 +387,7 @@
 	class CanvasRenderTarget extends RenderTarget {
 		constructor() {
 			super();
-			this.depthTest = true;
+			this.depthTest = "closer";
 			this.depthWrite = true;
 		}
 		get width() {
@@ -392,7 +403,7 @@
 			this.depthTest = test;
 			this.depthWrite = write;
 		}
-		hasDepthBuffer() {
+		get hasDepthBuffer() {
 			return true;
 		}
 	}
@@ -402,7 +413,7 @@
 			this.texture = gl.createTexture();
 			this.width = 0;
 			this.height = 0;
-			this.depthTest = false;
+			this.depthTest = "everything";
 			this.depthWrite = false;
 			this.wrap = gl.CLAMP_TO_EDGE;
 			this.filter = gl.NEAREST;
@@ -1254,8 +1265,8 @@ void main() {
 			arguments: {
 				TEST: {
 					type: ArgumentType.STRING,
-					defaultValue: "true",
-					menu: "onOff"
+					defaultValue: "closer",
+					menu: "depthTest"
 				},
 				WRITE: {
 					type: ArgumentType.STRING,
@@ -1264,7 +1275,9 @@ void main() {
 				},
 			},
 			def: function({TEST, WRITE}) {
-				currentRenderTarget.setDepth(Cast.toBoolean(TEST), Cast.toBoolean(WRITE));
+				const test = Cast.toString(TEST);
+				if (!DepthTests[test]) test = "everything";
+				currentRenderTarget.setDepth(test, Cast.toBoolean(WRITE));
 				currentRenderTarget.updateDepth();
 			}
 		},
@@ -3073,7 +3086,7 @@ void main() {
 				if (PROPERTY == "height") return currentRenderTarget.height;
 				if (PROPERTY == "depth test") return currentRenderTarget.depthTest;
 				if (PROPERTY == "depth write") return currentRenderTarget.depthWrite;
-				if (PROPERTY == "has depth storage") return currentRenderTarget.hasDepthBuffer();
+				if (PROPERTY == "has depth storage") return currentRenderTarget.hasDepthBuffer;
 				if (PROPERTY == "image as data URI") {
 					const width  = currentRenderTarget.width;
 					const height = currentRenderTarget.height;
@@ -3406,6 +3419,10 @@ void main() {
 						acceptReporters: true,
 						items: ["1", "2", "4", "8", "16"]
 					},
+					depthTest: {
+						acceptReporters: true,
+						items: ["nothing", "closer", "same", "further", "closer or same", "further or same", "not same", "everything"]
+					}
 				}
 			};
 
