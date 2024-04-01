@@ -841,5 +841,32 @@
     }
   }
 
+  const s3dApi = runtime.ext_xeltallivsimple3d ?? (runtime.ext_xeltallivsimple3d = {});
+  const externalTransforms = s3dApi.externalTransforms ?? (s3d.externalTransforms = {});
+  externalTransforms["ar_combined"] = {
+    name: "AR: combined",
+    get() {
+      return xrCombinedMatrix?.slice() ?? [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+    }
+  };
+  externalTransforms["ar_projection"] = {
+    name: "AR: view to projected",
+    get() {
+      return xrProjectionMatrix?.slice() ?? [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+    }
+  };
+  externalTransforms["ar_view"] = {
+    name: "AR: world to view",
+    get() {
+      return xrTransform?.matrix?.slice() ?? [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+    }
+  };
+  externalTransforms["ar_inverse_view"] = {
+    name: "AR: world to view (inverse)",
+    get() {
+      return xrTransform?.inverse?.matrix?.slice() ?? [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+    }
+  };
+
   Scratch.extensions.register(new ARExtension());
 })(Scratch);
