@@ -243,84 +243,6 @@
 		},
 	};
 	/* End of m4 */
-
-	if (!Scratch.extensions.unsandboxed) {
-		throw new Error("Simple 3D extension must be run unsandboxed");
-	}
-
-	setTimeout(() => alert("Simple3D extension is unfinished. Use at your own risk. It's extension id as well as some blocks is subject to change. Any projects made with the current version WILL BREAK in the future. You've been warned, don't ask for help when that does eventually happen."), 2000);
-
-	const ArgumentType = Scratch.ArgumentType;
-	const BlockType = Scratch.BlockType;
-	const Cast = Scratch.Cast;
-	let   Skin = null;
-	const vm = Scratch.vm;
-	const renderer = vm.renderer;
-	const runtime = vm.runtime;
-
-	let transforms = {
-		modelToWorld: m4.identity(),
-		worldToView: m4.identity(),
-		viewToProjected: m4.identity(),
-		import: m4.identity(),
-		custom: m4.identity()
-	}
-	let transformed = [0,0,0,0];
-	let selectedTransform = "viewToProjected";
-	let colorMultiplier = [1,1,1,1];
-	let colorAdder = [0,0,0,0];
-	let fogColor = [1,1,1];
-	let fogDistance = [10,90];
-	let fogEnabled = false;
-	let imageSource = null;
-	let imageSourceSync = null;
-	let canvasRenderTarget = null;
-	let currentRenderTarget = null;
-
-	const canvas = document.createElement("canvas");
-	//document.body.append(canvas);
-	//canvas.style.position = "absolute";
-	//canvas.style["z-index"] = 99999;
-	let gl = canvas.getContext("webgl2");
-	const Blendings = {
-		"overwrite color (fastest for opaque)": [false],
-		"default": [true, gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.FUNC_ADD],
-		"additive": [true, gl.ONE, gl.ONE, gl.FUNC_ADD],
-		"subtractive": [true, gl.ONE, gl.ONE, gl.FUNC_SUBTRACT],
-		"multiply": [true, gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.FUNC_ADD],
-		"invert": [true, gl.ONE_MINUS_DST_COLOR, gl.ONE_MINUS_SRC_COLOR, gl.FUNC_ADD],
-		"invisible": [true, gl.ZERO, gl.ONE, gl.FUNC_ADD],
-	};
-	const Cullings = {
-		"nothing": [false],
-		"back faces": [true, gl.BACK],
-		"front faces": [true, gl.FRONT],
-	};
-	const DepthTests = {
-		"nothing": gl.NEVER,
-		"closer": gl.LESS,
-		"same": gl.EQUAL,
-		"further": gl.GREATER,
-		"closer or same": gl.LEQUAL,
-		"further or same": gl.GEQUAL,
-		"not same": gl.NOTEQUAL,
-		"everything": gl.ALWAYS
-	}
-	let currentBlending = "unset";
-	let currentBlendingProps = [null, null, null, null];
-	let currentCulling = 0;
-	let currentCullingProps = [null, null];
-	const publicApi = runtime.ext_xeltallivsimple3d ?? (runtime.ext_xeltallivsimple3d = {});
-	const externalTransforms = publicApi.externalTransforms ?? (publicApi.externalTransforms = {});
-
-	window.gl = gl; //!!!!!
-	gl.enable(gl.DEPTH_TEST);
-	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-
-	const ext_af = gl.getExtension("EXT_texture_filter_anisotropic") ||
-		gl.getExtension("MOZ_EXT_texture_filter_anisotropic") ||
-		gl.getExtension("WEBKIT_EXT_texture_filter_anisotropic");
-
 /*
 	const ogl = gl;
 	gl = {}
@@ -343,13 +265,15 @@
 	gl.__proto__ = ogl; //*/
 
 	class Logger {
-		static error(text, util, returnVal) {
-			vm.getAddonBlock(unescape("%u200B%u200Berror%u200B%u200B%20%25s"))?.callback({content: text}, util);
+		logErrors = false;
+		toggle() {
+			this.logErrors = !this.logErrors;
+		}
+		error(text, thread, returnVal) {
+			if (this.logErrors) vm.getAddonBlock(unescape("%u200B%u200Berror%u200B%u200B%20%25s"))?.callback({content: text}, {thread});
 			return returnVal;
 		}
 	}
-
-	let meshes = new Map();
 	class Buffer {
 		constructor() {
 			this.buffer = gl.createBuffer();
@@ -481,9 +405,15 @@
 				}
 			}
 		}
+		isLoading() {
+			for (const side of this.sides) {
+				if (side.loading) return true;
+			}
+			return false;
+		}
 		destroy() {
 			gl.deleteTexture(this.texture);
-			for (let side of this.sides) side.destroy();
+			for (const side of this.sides) side.destroy();
 		}
 	}
 	class Texture2D extends Texture {
@@ -512,6 +442,7 @@
 			this.target = target;
 			this.depthTexture = null;
 			this.framebuffer = null;
+			this.loading = false;
 		}
 		resetTexture(width, height) {
 			gl.texImage2D(this.target, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -522,6 +453,7 @@
 			if (currentRenderTarget == this) this.updateViewport();
 		}
 		setTexture(data, width, height, wrap, filter) {
+			this.loading = false;
 			this.shared.bindTexture();
 			if (data instanceof HTMLImageElement || data instanceof HTMLCanvasElement) {
 				gl.texImage2D(this.target, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, data);
@@ -584,6 +516,8 @@
 			// primitives
 			// blending
 			// culling
+			this.uploadOffset = -1;
+			this.uploadUsage = gl.STATIC_DRAW;
 			this.isValid = true;
 			this.dependants = new Set();
 			this.dependencies = new Set();
@@ -622,9 +556,6 @@
 			//TODO: continue
 		}
 	}
-	canvasRenderTarget = new CanvasRenderTarget();
-	currentRenderTarget = canvasRenderTarget;
-
 	const workerSrc = `
 	class OffModelImporter {
 		constructor(dataRaw) {
@@ -683,7 +614,6 @@
 			}
 			for(let i=0; i<dataArr.length; i++) {
 				const arr = dataArr[i];
-				console.log(arr);
 				if (arr[0] == "v") {
 					vertPos.push(arr.slice(1).map(Number));
 				}
@@ -793,18 +723,14 @@
 			this.resolveFn(output.data);
 		}
 	}
-	const modelDecoder = new ModelDecoder();
-
-	let skin = null;
-	let skinId = null;
-	let drawableId = null;
-
-	// Obtain Skin
-	let tempSkin = renderer.createTextSkin("say", "", true);
-	Skin = renderer._allSkins[tempSkin].__proto__.__proto__.constructor;
-	renderer.destroySkin(tempSkin);
-
-	class SimpleSkin extends Skin {
+	function getSkin(renderer) {
+		// Obtain Skin
+		const tempSkin = renderer.createTextSkin("say", "", true);
+		const Skin = renderer._allSkins[tempSkin].__proto__.__proto__.constructor;
+		renderer.destroySkin(tempSkin);
+		return Skin;
+	}
+	class SimpleSkin extends (getSkin(Scratch.vm.renderer)) {
 		constructor(id, renderer) {
 			super(id, renderer);
 			const gl = renderer.gl;
@@ -864,33 +790,32 @@
 			this.resizeCanvas();
 		}
 	}
+	function addSimple3DLayer() {
+		// Register new drawable group "simple3D"
+		let index = renderer._groupOrdering.indexOf("video");
+		let copy = renderer._groupOrdering.slice();
+		copy.splice(index, 0, "simple3D");
+		renderer.setLayerGroupOrdering(copy);
 
-	// Register new drawable group "simple3D"
-	let index = renderer._groupOrdering.indexOf("video");
-	let copy = renderer._groupOrdering.slice();
-	copy.splice(index, 0, "simple3D");
-	renderer.setLayerGroupOrdering(copy);
+		// Create drawable and skin
+		const skinId = renderer._nextSkinId++;
+		const skin = new SimpleSkin(skinId, renderer);
+		renderer._allSkins[skinId] = skin;
+		const drawableId = renderer.createDrawable("simple3D");
+		renderer.updateDrawableSkinId(drawableId, skinId);
+		redraw();
 
+		const drawOriginal = renderer.draw;
+		renderer.draw = function() {
+			if(this.dirty) redraw();
+			drawOriginal.call(this);
+		}
 
-	// Create drawable and skin
-	skinId = renderer._nextSkinId++;
-	renderer._allSkins[skinId] = skin = new SimpleSkin(skinId, renderer);
-	drawableId = renderer.createDrawable("simple3D");
-	renderer.updateDrawableSkinId(drawableId, skinId);
-	redraw();
-
-	const drawOriginal = renderer.draw;
-	renderer.draw = function() {
-		if(this.dirty) redraw();
-		drawOriginal.call(this);
+		function redraw() {
+			skin.updateContent(canvas);
+			runtime.requestRedraw();
+		}
 	}
-
-	function redraw() {
-		skin.updateContent(canvas);
-		runtime.requestRedraw();
-	}
-
-
 	const vshSrc = `
 precision highp float;
 
@@ -925,6 +850,12 @@ in vec4 a_instanceTransform;
 #endif
 #ifdef INSTANCE_MATRIX
 in mat4 a_instanceTransform;
+#endif
+#ifdef INSTANCE_COLOR
+in vec4 a_instanceColor;
+#endif
+#ifdef INSTANCE_UV
+in vec2 a_instanceUv;
 #endif
 
 out vec4 v_color;
@@ -988,19 +919,25 @@ void main() {
 #ifdef UV_OFFSET
 	uv += u_uvOffset;
 #endif
+#ifdef INSTANCE_UV
+	uv += a_instanceUv;
+#endif
 #elif TEXTURES == 3
 	vec3 uv = a_uv;
 #endif
 #endif
 	gl_Position = u_projection * view;
-	v_color = a_color;
+	vec4 color = a_color;
+#ifdef INSTANCE_COLOR
+	color *= a_instanceColor;
+#endif
+	v_color = color;
 #ifdef TEXTURES
 	v_uv = uv;
 #endif
 	v_viewpos = view.xyz;
 }
 `;
-
 	const fshSrc = `
 precision mediump float;
 
@@ -1092,20 +1029,6 @@ void main() {
 		}
 		return {program, aloc, uloc}
 	}
-
-	var texture = gl.createTexture();
-	gl.bindTexture(gl.TEXTURE_2D, texture);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-	let image = new Image();
-	image.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAADt3eJSAAABg2lDQ1BJQ0MgcHJvZmlsZQAAKJF9kT1Iw1AUhU9TpUUqDnYQcchQneyiIo61FYpQIdQKrTqYvPQPmjQkKS6OgmvBwZ/FqoOLs64OroIg+APi7OCk6CIl3pcUWsT44PI+znvncN99gNCqMc3qSwCabpvZdFLMF1bF0CsEhAGqmMwsY16SMvBdX/cI8P0uzrP87/25BtWixYCASJxghmkTbxDPbtoG533iKKvIKvE58aRJDRI/cl3x+I1z2WWBZ0bNXDZFHCUWyz2s9DCrmBrxDHFM1XTKF/Ieq5y3OGu1Buv0yV8YKeory1ynGkMai1iCBBEKGqiiBhtx2nVSLGTpPOnjH3X9ErkUclXByLGAOjTIrh/8D37P1ipNT3lJkSTQ/+I4H+NAaBdoNx3n+9hx2idA8Bm40rv+eguY+yS92dViR8DQNnBx3dWUPeByBxh5MmRTdqUglVAqAe9n9E0FYPgWGFjz5tY5x+kDkKNZZW6Ag0NgokzZ6z7vDvfO7d87nfn9ACRZcoedT/mXAAAAGFBMVEVtbW11dXVtbf+EhIT/bW2goKBt/21t//8Qh6V7AAAACXBIWXMAABhMAAAYdAGfqEAgAAAAB3RJTUUH6AIIAA4YBFj9GAAAABl0RVh0Q29tbWVudABDcmVhdGVkIHdpdGggR0lNUFeBDhcAAABjSURBVAjXPctBDkAwFIThqdey91ygnIAoa9EzcIBGLyDS69MW/26+ZIAvZYwhZkbpNy/saKGOyUjmFeQ2J5Z+SUJNFi+TfK+/uKJCtENbhT2gYO7UNT+ie03nfoLqV4os4X/dFf0TKILDS0AAAAAASUVORK5CYII="
-//data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAABhGlDQ1BJQ0MgcHJvZmlsZQAAKJF9kT1Iw0AcxV9TpSIVQTuIOmSoThZERR21CkWoEGqFVh1MLv0QmjQkKS6OgmvBwY/FqoOLs64OroIg+AHi5uak6CIl/i8ptIjx4Lgf7+497t4BQq3ENKttFNB020wl4mImuyKGXiFgAD2Ygigzy5iVpCR8x9c9Any9i/Es/3N/ji41ZzEgIBLPMMO0ideJJzdtg/M+cYQVZZX4nHjEpAsSP3Jd8fiNc8FlgWdGzHRqjjhCLBZaWGlhVjQ14gniqKrplC9kPFY5b3HWShXWuCd/YTinLy9xneYgEljAIiSIUFDBBkqwEaNVJ8VCivbjPv5+1y+RSyHXBhg55lGGBtn1g//B726t/PiYlxSOA+0vjvMxBIR2gXrVcb6PHad+AgSfgSu96S/XgOlP0qtNLXoEdG8DF9dNTdkDLneAvidDNmVXCtIU8nng/Yy+KQv03gKdq15vjX2cPgBp6ip5AxwcAsMFyl7zeXdHa2//nmn09wO7fHLEriaHDAAAAAlwSFlzAAALEwAACxMBAJqcGAAAAAd0SU1FB+UCGxQSKCHrcOoAAAAZdEVYdENvbW1lbnQAQ3JlYXRlZCB3aXRoIEdJTVBXgQ4XAAABy0lEQVQoz11STWvbQBAdRx/udmmQ6MRgYRQaMBSZnAQ+FV3yj/IP8td0NPgYXYwO8kEk6VDhpLMrLCXKYRIl7R6W3Z03s++9mcnV1a80XVl7BACl/O32FjE8P48AwNrjwwNZ2zJbwSjlOxcXcdf1zAYxqKramNaY9vHxL7NlNoJGDMtyH8dza48nWbYmaoiaqqqJGsQQMWS2RI2gk2SZJEt4X87l5c84nkfRrCz3WbaeTE4QgzAMhmE4HJ7SdBUEp0TNMAxluT87++4q5QtXAGBmuSrlEzWftUl5pXxnsYiYzRj2PKfvn+v63pi263qtv/b9s+c5d3e/u67vut4laiRbilVVDQCSv93evodaZptl6zzfTG5urgEgzzdaK6W+SP6osih2WqvR1jfRw/ASRTPxNE1Xy+WPYXgJglNj2jieV1WNGE6nU9Hwj+ixjOxyQAyJmtkMBeksFhHRn8PhCTEMgm+e54hLAOB5Tl3fC0lxGTH4EC2HsdI4FNLZotgJzM2ytXRAa53nG/EEAJitkJT2p+lKRsFlZuGqtf5sZZIshZhSflHsxt/csZdEzSh91C3chK3Wiqh5cwkAJPDfOMhjlq2Z2dpjUexeAX32b6d+O+QBAAAAAElFTkSuQmCC";
-	image.onload = function() {
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-	}
-
 	class ProgramManager {
 		constructor() {
 			this.programs = {};
@@ -1118,9 +1041,27 @@ void main() {
 			this.programs[key] = program;
 			return program;
 		}
+		clear() {
+			for(const {program} of this.programs) {
+				gl.deleteProgram(program);
+			}
+			this.programs = {};
+		}
 	}
-	const programs = new ProgramManager();
-
+	function getDefaultTexture() {
+		const texture = gl.createTexture();
+		gl.bindTexture(gl.TEXTURE_2D, texture);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+		const image = new Image();
+		image.src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAADt3eJSAAABg2lDQ1BJQ0MgcHJvZmlsZQAAKJF9kT1Iw1AUhU9TpUUqDnYQcchQneyiIo61FYpQIdQKrTqYvPQPmjQkKS6OgmvBwZ/FqoOLs64OroIg+APi7OCk6CIl3pcUWsT44PI+znvncN99gNCqMc3qSwCabpvZdFLMF1bF0CsEhAGqmMwsY16SMvBdX/cI8P0uzrP87/25BtWixYCASJxghmkTbxDPbtoG533iKKvIKvE58aRJDRI/cl3x+I1z2WWBZ0bNXDZFHCUWyz2s9DCrmBrxDHFM1XTKF/Ieq5y3OGu1Buv0yV8YKeory1ynGkMai1iCBBEKGqiiBhtx2nVSLGTpPOnjH3X9ErkUclXByLGAOjTIrh/8D37P1ipNT3lJkSTQ/+I4H+NAaBdoNx3n+9hx2idA8Bm40rv+eguY+yS92dViR8DQNnBx3dWUPeByBxh5MmRTdqUglVAqAe9n9E0FYPgWGFjz5tY5x+kDkKNZZW6Ag0NgokzZ6z7vDvfO7d87nfn9ACRZcoedT/mXAAAAGFBMVEVtbW11dXVtbf+EhIT/bW2goKBt/21t//8Qh6V7AAAACXBIWXMAABhMAAAYdAGfqEAgAAAAB3RJTUUH6AIIAA4YBFj9GAAAABl0RVh0Q29tbWVudABDcmVhdGVkIHdpdGggR0lNUFeBDhcAAABjSURBVAjXPctBDkAwFIThqdey91ygnIAoa9EzcIBGLyDS69MW/26+ZIAvZYwhZkbpNy/saKGOyUjmFeQ2J5Z+SUJNFi+TfK+/uKJCtENbhT2gYO7UNT+ie03nfoLqV4os4X/dFf0TKILDS0AAAAAASUVORK5CYII="
+		image.onload = function() {
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+		}
+		return texture;
+	}
 	function compact(target, names, typedArray, scale=1) {
 		const lists = names.map(name => target.lookupVariableByNameAndType(name, "list"));
 		if (lists.includes(null)) return null;
@@ -1174,44 +1115,149 @@ void main() {
 		}
 		return new typedArray(value);
 	}
+	function uploadBuffer(mesh, name, value, size) {
+		if (!mesh || !value) return;
+		if (mesh.uploadOffset < 0) {
+			const buffer = mesh.myBuffers[name] ?? (mesh.myBuffers[name] = new Buffer());
+			gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
+			gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
+			buffer.size = size;
+			buffer.length = value.length / size;
+			mesh.update();
+		} else {
+			const buffer = mesh.myBuffers.colors;
+			if (!buffer || mesh.uploadOffset + value.length >= buffer.length || buffer.size !== size) return;
+			gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
+			gl.bufferSubData(gl.ARRAY_BUFFER, mesh.uploadOffset * size, value);
+		}
+	}
+
+	if (!Scratch.extensions.unsandboxed) throw new Error("Simple 3D extension must be run unsandboxed");
+	setTimeout(() => alert("Simple3D extension is unfinished. Use at your own risk. It's extension id as well as some blocks is subject to change. Any projects made with the current version WILL BREAK in the future. You've been warned, don't ask for help when that does eventually happen."), 2000);
+
+	const ArgumentType = Scratch.ArgumentType;
+	const BlockType = Scratch.BlockType;
+	const Cast = Scratch.Cast;
+	const vm = Scratch.vm;
+	const renderer = vm.renderer;
+	const runtime = vm.runtime;
+
+	const canvas = document.createElement("canvas");
+	const gl = canvas.getContext("webgl2");
+	const ext_af = gl.getExtension("EXT_texture_filter_anisotropic") || gl.getExtension("MOZ_EXT_texture_filter_anisotropic") || gl.getExtension("WEBKIT_EXT_texture_filter_anisotropic");
+	gl.enable(gl.DEPTH_TEST);
+	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+	window.gl = gl; //!!!!!
+	const Blendings = {
+		"overwrite color (fastest for opaque)": [false],
+		"default": [true, gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.FUNC_ADD],
+		"additive": [true, gl.ONE, gl.ONE, gl.FUNC_ADD],
+		"subtractive": [true, gl.ONE, gl.ONE, gl.FUNC_SUBTRACT],
+		"multiply": [true, gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.FUNC_ADD],
+		"invert": [true, gl.ONE_MINUS_DST_COLOR, gl.ONE_MINUS_SRC_COLOR, gl.FUNC_ADD],
+		"invisible": [true, gl.ZERO, gl.ONE, gl.FUNC_ADD],
+	};
+	const Cullings = {
+		"nothing": [false],
+		"back faces": [true, gl.BACK],
+		"front faces": [true, gl.FRONT],
+	};
+	const DepthTests = {
+		"nothing": gl.NEVER,
+		"closer": gl.LESS,
+		"same": gl.EQUAL,
+		"further": gl.GREATER,
+		"closer or same": gl.LEQUAL,
+		"further or same": gl.GEQUAL,
+		"not same": gl.NOTEQUAL,
+		"everything": gl.ALWAYS
+	}
+	const texture = getDefaultTexture();
+	const meshes = new Map();
+	const programs = new ProgramManager();
+	const modelDecoder = new ModelDecoder();
+	const logger = new Logger();
+	const publicApi = runtime.ext_xeltallivsimple3d ?? (runtime.ext_xeltallivsimple3d = {});
+	const externalTransforms = publicApi.externalTransforms ?? (publicApi.externalTransforms = {});
+	const canvasRenderTarget = new CanvasRenderTarget();
+
+	let currentRenderTarget;
+	let transforms;
+	let transformed;
+	let selectedTransform;
+	let colorMultiplier;
+	let colorAdder;
+	let fogColor;
+	let fogDistance;
+	let fogEnabled;
+	let imageSource;
+	let imageSourceSync;
+	let currentBlending;
+	let currentBlendingProps;
+	let currentCulling;
+	let currentCullingProps;
+	let lastTextMeasurement;
+
+	function resetEverything() {
+		currentRenderTarget = canvasRenderTarget;
+		transforms = {
+			modelToWorld: m4.identity(),
+			worldToView: m4.identity(),
+			viewToProjected: m4.identity(),
+			import: m4.identity(),
+			custom: m4.identity()
+		};
+		transformed = [0,0,0,0];
+		selectedTransform = "viewToProjected";
+		colorMultiplier = [1,1,1,1];
+		colorAdder = [0,0,0,0];
+		fogColor = [1,1,1];
+		fogDistance = [10,90];
+		fogEnabled = false;
+		imageSource = null;
+		imageSourceSync = null;
+		currentBlending = "unset";
+		currentBlendingProps = [null, null, null, null];
+		currentCulling = 0;
+		currentCullingProps = [null, null];
+		lastTextMeasurement = null;
+	}
+	resetEverything();
+	addSimple3DLayer();
 
 	let definitions = [
-/*		{
-			opcode: "resizeCanvas",
-			blockType: BlockType.COMMAND,
-			text: "resize canvas to width [WIDTH] height [HEIGHT]",
-			arguments: {
-				WIDTH: {
-					type: ArgumentType.NUMBER,
-					defaultValue: 480
-				},
-				HEIGHT: {
-					type: ArgumentType.NUMBER,
-					defaultValue: 360
-				},
-			},
-			def: function({WIDTH, HEIGHT}) {
-				canvas.width = Cast.toNumber(WIDTH);
-				canvas.height = Cast.toNumber(HEIGHT);
-			}
-		},
-		"---",*/
 		{
 			blockType: BlockType.BUTTON,
 			text: "Download sample project",
-			opcode: "getSampleProject",
 			func: "getSampleProject",
 			def: function() {
 				Scratch.openWindow("https://github.com/Xeltalliv/extensions/blob/simple3d-dev/samples/s3dsample.sb3")
 			}
 		},
 		{
+			blockType: BlockType.BUTTON,
+			text: "Toggle error logging",
+			func: "toggleErrors",
+			def: function() {
+				logger.toggle();
+				runtime.extensionManager.refreshBlocks();
+			}
+		},
+		{
+			blockType: BlockType.LABEL,
+			text: "Clearing",
+		},
+		{
 			opcode: "resetEverything",
 			blockType: BlockType.COMMAND,
-			color1: "#aa1111",
 			text: "reset everything",
 			def: function() {
-				//TODO
+				for(const mesh of meshes.values()) {
+					mesh.destroy();
+				}
+				meshes.clear();
+				programs.clear();
+				resetEverything();
 			}
 		},
 		"---",
@@ -1227,7 +1273,13 @@ void main() {
 				},
 			},
 			def: function({LAYERS}) {
-				gl.clear(Cast.toNumber(LAYERS));
+				if (gl.getParameter(gl.DEPTH_WRITEMASK)) {
+					gl.clear(Cast.toNumber(LAYERS));
+				} else {
+					gl.depthMask(true);
+					gl.clear(Cast.toNumber(LAYERS));
+					gl.depthMask(false);
+				}
 				renderer.dirty = true;   //TODO: only if canvas (framebuffer is null)
 				runtime.requestRedraw(); //TODO
 			}
@@ -1275,7 +1327,7 @@ void main() {
 				},
 			},
 			def: function({TEST, WRITE}) {
-				const test = Cast.toString(TEST);
+				let test = Cast.toString(TEST);
 				if (!DepthTests[test]) test = "everything";
 				currentRenderTarget.setDepth(test, Cast.toBoolean(WRITE));
 				currentRenderTarget.updateDepth();
@@ -1411,6 +1463,10 @@ void main() {
 					const texture = mesh.data.texture;
 					return texture instanceof TextureCube;
 				}
+				if (PROP == "texture is loading") {
+					const texture = mesh.data.texture;
+					return texture.isLoading();
+				}
 				return "";
 			}
 		},
@@ -1466,13 +1522,7 @@ void main() {
 			def: function({NAME, X, Y}, {target}) {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [X, Y], Float32Array);
-				if (!mesh || !value) return;
-				const buffer = mesh.myBuffers.position ?? (mesh.myBuffers.position = new Buffer());
-				gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-				gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-				buffer.size = 2;
-				buffer.length = value.length / 2;
-				mesh.update();
+				uploadBuffer(mesh, "position", value, 2);
 			}
 		},
 		{
@@ -1500,13 +1550,7 @@ void main() {
 			def: function({NAME, X, Y, Z}, {target}) {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [X, Y, Z], Float32Array);
-				if (!mesh || !value) return;
-				const buffer = mesh.myBuffers.position ?? (mesh.myBuffers.position = new Buffer());
-				gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-				gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-				buffer.size = 3;
-				buffer.length = value.length / 3;
-				mesh.update();
+				uploadBuffer(mesh, "position", value, 3);
 			}
 		},
 		{
@@ -1534,13 +1578,7 @@ void main() {
 			def: function({NAME, R, G, B}, {target}) {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [R, G, B], Uint8Array);
-				if (!mesh || !value) return;
-				const buffer = mesh.myBuffers.colors ?? (mesh.myBuffers.colors = new Buffer());
-				gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-				gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-				buffer.size = 3;
-				buffer.length = value.length / 3;
-				mesh.update();
+				uploadBuffer(mesh, "colors", value, 3);
 			}
 		},
 		{
@@ -1572,14 +1610,7 @@ void main() {
 			def: function({NAME, R, G, B, A}, {target}) {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [R, G, B, A], Uint8Array);
-				if (!mesh || !value) return;
-				const buffer = mesh.myBuffers.colors ?? (mesh.myBuffers.colors = new Buffer());
-				gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-				gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-				buffer.size = 4;
-				buffer.length = value.length / 4;
-				mesh.update();
-
+				uploadBuffer(mesh, "colors", value, 4);
 			}
 		},
 		{
@@ -1604,12 +1635,7 @@ void main() {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [U, V], Float32Array);
 				if (!mesh || !value) return;
-				const buffer = mesh.myBuffers.texCoords ?? (mesh.myBuffers.texCoords = new Buffer());
-				gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-				gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-				buffer.size = 2;
-				buffer.length = value.length / 2;
-				mesh.update();
+				uploadBuffer(mesh, "texCoords", value, 2);
 			}
 		},
 		{
@@ -1641,6 +1667,7 @@ void main() {
 				const filter = Cast.toString(FILTER) == "blurred" ? gl.LINEAR : gl.NEAREST;
 				let textureObj = mesh.myData.texture ?? (mesh.myData.texture = new Texture2D());
 				if (!(textureObj instanceof Texture2D)) return;
+				textureObj.main.loading = true;
 				mesh.update();
 				const onData = function(data) {
 					if (data == null || mesh.destroyed) return;
@@ -1678,13 +1705,7 @@ void main() {
 			def: function({NAME, U, V, W}, {target}) {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [U, V, W], Float32Array);
-				if (!mesh || !value) return;
-				const buffer = mesh.myBuffers.texCoords ?? (mesh.myBuffers.texCoords = new Buffer());
-				gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-				gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-				buffer.size = 3;
-				buffer.length = value.length / 3;
-				mesh.update();
+				uploadBuffer(mesh, "texCoords", value, 3);
 			}
 		},
 		{
@@ -1720,18 +1741,19 @@ void main() {
 				const filter = Cast.toString(FILTER) == "blurred" ? gl.LINEAR : gl.NEAREST;
 				let textureObj = mesh.myData.texture ?? (mesh.myData.texture = new TextureCube());
 				if (!(textureObj instanceof TextureCube)) return;
+				const lookup = {
+					"X+": "xpos",
+					"X-": "xneg",
+					"Y+": "ypos",
+					"Y-": "yneg",
+					"Z+": "zpos",
+					"Z-": "zneg",
+				}
+				if (!lookup.hasOwnProperty(SIDE)) return;
+				textureObj[lookup[SIDE]].loading = true;
 				mesh.update();
 				const onData = function(data) {
 					if (data == null || mesh.destroyed) return;
-					const lookup = {
-						"X+": "xpos",
-						"X-": "xneg",
-						"Y+": "ypos",
-						"Y-": "yneg",
-						"Z+": "zpos",
-						"Z-": "zneg",
-					}
-					if (!lookup[SIDE]) return;
 					textureObj[lookup[SIDE]].setTexture(data.data, data.width, data.height, wrap, filter);
 				}
 				if (imageSourceSync) {
@@ -1891,20 +1913,18 @@ void main() {
 				},
 			},
 			def: function({NAME, PROPERTY, SRCLIST}, {target}) {
-				let bufferName, size;
-				if (PROPERTY == "transforms") {bufferName = "instanceTransforms"; size = 16;}
-				if (PROPERTY == "positions" ) {bufferName = "instanceTransforms"; size = 3; }
-				if (PROPERTY == "positions and sizes" ) {bufferName = "instanceTransforms"; size = 4; }
+				let bufferName, size, type;
+				if (PROPERTY == "transforms"             ) {bufferName = "instanceTransforms"; size = 16; type = Float32Array;}
+				if (PROPERTY == "XY positions"           ) {bufferName = "instanceTransforms"; size = 2;  type = Float32Array;}
+				if (PROPERTY == "XYZ positions"          ) {bufferName = "instanceTransforms"; size = 3;  type = Float32Array;}
+				if (PROPERTY == "XYZ positions and sizes") {bufferName = "instanceTransforms"; size = 4;  type = Float32Array;}
+				if (PROPERTY == "RGB colors"             ) {bufferName = "instanceColors";     size = 3;  type = Uint8Array;  }
+				if (PROPERTY == "RGBA colors"            ) {bufferName = "instanceColors";     size = 4;  type = Uint8Array;  }
+				if (PROPERTY == "UV offsets"             ) {bufferName = "instanceUVOffsets";  size = 2;  type = Float32Array;}
 				if (!bufferName) return;
 				const mesh = meshes.get(Cast.toString(NAME));
-				const value = compact(target, [SRCLIST], Float32Array);
-				if (!mesh || !value) return;
-				const buffer = mesh.myBuffers[bufferName] ?? (mesh.myBuffers[bufferName] = new Buffer());
-				gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-				gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-				buffer.size = size;
-				buffer.length = value.length / size;
-				mesh.update();
+				const value = compact(target, [SRCLIST], type);
+				uploadBuffer(mesh, bufferName, value, size);
 			}
 		},
 		{
@@ -1925,38 +1945,39 @@ void main() {
 					menu: "lists"
 				},
 			},
-			def: async function({NAME, FILETYPE, SRCLIST}, {target}) {
-				const mesh = meshes.get(Cast.toString(NAME));
-				const list = target.lookupVariableByNameAndType(SRCLIST, "list");
-				if (!mesh || !list) return;
-				let output = await modelDecoder.decode(FILETYPE, list.value, transforms.import);
-				if (!output) return;
-				if (output.xyz) {
-					const value = new Float32Array(output.xyz);
-					const buffer = mesh.myBuffers.position ?? (mesh.myBuffers.position = new Buffer());
-					gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-					gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-					buffer.size = 3;
-					buffer.length = value.length / 3;
-				}
-				if (output.rgba) {
-					const value = new Uint8Array(output.rgba);
-					const buffer = mesh.myBuffers.colors ?? (mesh.myBuffers.colors = new Buffer());
-					gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-					gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-					buffer.size = 4;
-					buffer.length = value.length / 4;
-				}
-				if (output.uv) {
-					const value = new Float32Array(output.uv);
-					const buffer = mesh.myBuffers.texCoords ?? (mesh.myBuffers.texCoords = new Buffer());
-					gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-					gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-					buffer.size = 2;
-					buffer.length = value.length / 2;
-				}
-				mesh.update();
-				//TODO
+			def: function({NAME, FILETYPE, SRCLIST}, {target}) {
+				(async function() {
+					const mesh = meshes.get(Cast.toString(NAME));
+					const list = target.lookupVariableByNameAndType(SRCLIST, "list");
+					if (!mesh || !list) return;
+					let output = await modelDecoder.decode(FILETYPE, list.value, transforms.import);
+					if (!output) return;
+					if (output.xyz) {
+						const value = new Float32Array(output.xyz);
+						const buffer = mesh.myBuffers.position ?? (mesh.myBuffers.position = new Buffer());
+						gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
+						gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
+						buffer.size = 3;
+						buffer.length = value.length / 3;
+					}
+					if (output.rgba) {
+						const value = new Uint8Array(output.rgba);
+						const buffer = mesh.myBuffers.colors ?? (mesh.myBuffers.colors = new Buffer());
+						gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
+						gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
+						buffer.size = 4;
+						buffer.length = value.length / 4;
+					}
+					if (output.uv) {
+						const value = new Float32Array(output.uv);
+						const buffer = mesh.myBuffers.texCoords ?? (mesh.myBuffers.texCoords = new Buffer());
+						gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
+						gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
+						buffer.size = 2;
+						buffer.length = value.length / 2;
+					}
+					mesh.update();
+				})();
 			}
 		},
 		{
@@ -2100,8 +2121,7 @@ void main() {
 				const start = Cast.toNumber(START)-1;
 				const end = Cast.toNumber(END);
 				if (!mesh) return;
-				mesh.myData.drawStart = start;
-				mesh.myData.drawAmount = Math.max(0, end-start);
+				mesh.myData.drawRange = [start, Math.max(0, end-start)];
 				mesh.update();
 			}
 		},
@@ -2148,9 +2168,12 @@ void main() {
 				for(const name in mesh.buffers) {
 					if (name == "indices") continue;
 					if (name == "instanceTransforms") continue;
+					if (name == "instanceColors") continue;
+					if (name == "instanceUVOffsets") continue;
 					if (length == -1) length = mesh.buffers[name].length;
 					else if (length !== mesh.buffers[name].length) return;
 				}
+				if (length == -1) return;
 
 				let flags = [];
 				if (mesh.buffers.colors) flags.push("COLORS");
@@ -2169,6 +2192,8 @@ void main() {
 					if (mesh.buffers.instanceTransforms.size == 4)  flags.push("INSTANCE_POS_SCALE");
 					if (mesh.buffers.instanceTransforms.size == 16) flags.push("INSTANCE_MATRIX");
 				}
+				if (mesh.buffers.instanceColors) flags.push("INSTANCE_COLOR");
+				if (mesh.buffers.instanceUVOffsets) flags.push("INSTANCE_UV");
 				const program = programs.get(flags);
 				gl.useProgram(program.program);
 				
@@ -2286,7 +2311,8 @@ void main() {
 				let start = 0;
 				let amount = mesh.buffers.indices ? mesh.buffers.indices.length : length;
 				if (mesh.data.drawRange) {
-					start = mesh.data.drawRange[0];
+					const size = mesh.buffers.indices ? mesh.buffers.indices.size : 1;
+					start = mesh.data.drawRange[0] * size;
 					amount = mesh.data.drawRange[1];
 				}
 				if (mesh.buffers.instanceTransforms) {
@@ -2433,7 +2459,7 @@ void main() {
 			def: function({TEXT, FONT, COLOR}) {
 				TEXT = Cast.toString(TEXT);
 				FONT = Cast.toString(FONT);
-				COLOR = Cast.toString(COLOR);
+				COLOR = Cast.toString(COLOR); // TODO: Cast.toRGBColorObject ????
 				imageSourceSync = null;
 				imageSource = new Promise((resolve, reject) => {
 					const canv = document.createElement("canvas");
@@ -2446,6 +2472,64 @@ void main() {
 					ctx.font = FONT;
 					ctx.fillStyle = COLOR;
 					ctx.fillText(TEXT, m.actualBoundingBoxLeft, m.fontBoundingBoxAscent);
+					imageSourceSync = {
+						width: canv.width,
+						height: canv.height,
+						data: canv
+					};
+					resolve(imageSourceSync);
+				});
+				return "[texture data]";
+			}
+		},
+		{
+			opcode: "textureFromTextWithBorder",
+			blockType: BlockType.REPORTER,
+			text: "texture from text [TEXT] font [FONT] color [COLOR] border [BORDERSIZE] [BORDERCOLOR]",
+			disableMonitor: true,
+			arguments: {
+				TEXT: {
+					type: ArgumentType.STRING,
+					defaultValue: "Hello World!",
+				},
+				FONT: {
+					type: ArgumentType.STRING,
+					defaultValue: "italic bold 32px sans-serif",
+				},
+				COLOR: {
+					type: ArgumentType.COLOR,
+					defaultValue: "#ffff00",
+				},
+				BORDERSIZE: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 5,
+				},
+				BORDERCOLOR: {
+					type: ArgumentType.COLOR,
+					defaultValue: "#000000",
+				}
+			},
+			def: function({TEXT, FONT, COLOR, BORDERSIZE, BORDERCOLOR}) {
+				TEXT = Cast.toString(TEXT);
+				FONT = Cast.toString(FONT);
+				COLOR = Cast.toString(COLOR);
+				BORDERSIZE = Cast.toNumber(BORDERSIZE);
+				BORDERCOLOR = Cast.toString(BORDERCOLOR); // TODO: Cast.toRGBColorObject ????
+				imageSourceSync = null;
+				imageSource = new Promise((resolve, reject) => {
+					const canv = document.createElement("canvas");
+					const ctx = canv.getContext("2d");
+					ctx.font = FONT;
+					const m = ctx.measureText(TEXT);
+					canv.width = m.actualBoundingBoxLeft + m.actualBoundingBoxRight + 2 * BORDERSIZE;
+					canv.height = m.fontBoundingBoxAscent + m.fontBoundingBoxDescent + 2 * BORDERSIZE;
+					ctx.clearRect(0, 0, canv.width, canv.height);
+					ctx.font = FONT;
+					ctx.lineWidth = BORDERSIZE;
+					ctx.fillStyle = COLOR;
+					ctx.strokeStyle = BORDERCOLOR;
+					ctx.fillText(TEXT, m.actualBoundingBoxLeft + BORDERSIZE, m.fontBoundingBoxAscent + BORDERSIZE);
+					ctx.strokeText(TEXT, m.actualBoundingBoxLeft + BORDERSIZE, m.fontBoundingBoxAscent + BORDERSIZE);
 					imageSourceSync = {
 						width: canv.width,
 						height: canv.height,
@@ -2555,6 +2639,61 @@ void main() {
 					resolve(imageSourceSync);
 				});
 				return retStatus;
+			}
+		},
+		{
+			blockType: BlockType.LABEL,
+			text: "Text measurements"
+		},
+		{
+			opcode: "measureText",
+			blockType: BlockType.COMMAND,
+			text: "measure text [TEXT] font [FONT]",
+			disableMonitor: true,
+			arguments: {
+				PROP: {
+					type: ArgumentType.STRING,
+					defaultValue: "up",
+				},
+				TEXT: {
+					type: ArgumentType.STRING,
+					defaultValue: "Hello World!",
+				},
+				FONT: {
+					type: ArgumentType.STRING,
+					defaultValue: "italic bold 32px sans-serif",
+				}
+			},
+			def: function({PROP, TEXT, FONT}) {
+				PROP = Cast.toString(PROP);
+				TEXT = Cast.toString(TEXT);
+				FONT = Cast.toString(FONT);
+				const canv = document.createElement("canvas");
+				const ctx = canv.getContext("2d");
+				ctx.font = FONT;
+				lastTextMeasurement = ctx.measureText(TEXT);
+			}
+		},
+		{
+			opcode: "readMeasuredText",
+			blockType: BlockType.REPORTER,
+			text: "measured [DIR] size",
+			disableMonitor: true,
+			arguments: {
+				DIR: {
+					type: ArgumentType.STRING,
+					menu: "directions",
+					defaultValue: "up",
+				},
+			},
+			def: function({DIR}) {
+				if (!lastTextMeasurement) return 0;
+				DIR = Cast.toString(DIR);
+				if (DIR == "up") return lastTextMeasurement.fontBoundingBoxAscent;
+				if (DIR == "down") return lastTextMeasurement.fontBoundingBoxDescent;
+				if (DIR == "left") return lastTextMeasurement.actualBoundingBoxLeft;
+				if (DIR == "right") return lastTextMeasurement.actualBoundingBoxRight;
+				return 0;
 			}
 		},
 		{
@@ -3043,7 +3182,7 @@ void main() {
 					"Z+": "zpos",
 					"Z-": "zneg"
 				}
-				if (!lookup[SIDE]) return;
+				if (!lookup.hasOwnProperty(SIDE)) return;
 				mesh.data.texture[lookup[SIDE]].setAsRenderTarget();
 			}
 		},
@@ -3244,9 +3383,7 @@ void main() {
 				color1: "#5CB1D6",
 				color2: "#47A8D1",
 				color3: "#2E8EB8",
-/*				color1: "#0fBD8C",
-				color2: "#0DA57A",
-				color3: "#0B8E69",*/
+				docsURI: "hello",
 				blocks: [
 					...definitions
 				],
@@ -3303,10 +3440,11 @@ void main() {
 /*							"has vertex indices",
 							"has positions",
 							"has colors",
-							"has texture coords",
+							"has texture coordinates",
 							"has texture",
 							"has bones",
-							"has bone indices/weights",*/
+							"has bone indices/weights",
+							"has instancing",*/
 							"texture width",
 							"texture height",
 							"texture stores depth",
@@ -3314,8 +3452,8 @@ void main() {
 							"texture depth test",
 							"texture is 2D",
 							"texture is cube",
-/*							"texture has stage size",
-							"primitives",
+							"texture is loading",
+/*							"primitives",
 							"blending",
 							"culling",
 							"transparent pixel handling",*/
@@ -3409,7 +3547,7 @@ void main() {
 					},
 					instanceProperty: {
 						acceptReporters: false,
-						items: ["transforms", "positions", "positions and sizes"], //"UV offsets", "colors"]
+						items: ["transforms", "XY positions", "XYZ positions", "XYZ positions and sizes", "RGB colors", "RGBA colors", "UV offsets"]
 					},
 					renderTargetProperty: {
 						acceptReporters: false,
@@ -3422,6 +3560,10 @@ void main() {
 					depthTest: {
 						acceptReporters: true,
 						items: ["nothing", "closer", "same", "further", "closer or same", "further or same", "not same", "everything"]
+					},
+					directions: {
+						acceptReporters: true,
+						items: ["up", "down", "left", "right"]
 					}
 				}
 			};
@@ -3429,6 +3571,7 @@ void main() {
 	class Extension {
 		getInfo() {
 			definitions.find(b => b.opcode == "matStartWithExternal").hideFromPalette = Object.keys(externalTransforms).length == 0;
+			definitions.find(b => b.func == "toggleErrors").text = `${logger.logErrors ? "Disable" : "Enable"} error logging`;
 			return extInfo;
 		}
 		listsMenu() {
@@ -3461,7 +3604,7 @@ void main() {
 
 	for(let block of definitions) {
 		if(block == "---") continue;
-		Extension.prototype[block.opcode] = block.def;
+		Extension.prototype[block.opcode ?? block.func] = block.def;
 	}
 
 	Scratch.extensions.register(new Extension());
