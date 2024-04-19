@@ -520,7 +520,6 @@
 			// culling
 			this.uploadOffset = -1;
 			this.uploadUsage = gl.STATIC_DRAW;
-			this.isValid = true;
 			this.dependants = new Set();
 			this.dependencies = new Set();
 		}
@@ -1842,7 +1841,7 @@ void main() {
 				}
 				uploadBuffer(mesh, "boneIndices", valueI, COUNT, 0);
 				if (COUNT > 1) {
-					uploadBuffer(mesh, "boneIndices", valueW, COUNT, 0);
+					uploadBuffer(mesh, "boneWeights", valueW, COUNT, 0);
 				}
 			}
 		},
@@ -2179,15 +2178,20 @@ void main() {
 			def: function({NAME}, util) {
 				NAME = Cast.toString(NAME);
 				const mesh = meshes.get(NAME);
-				if (!mesh || !mesh.isValid) return;
+				if (!mesh) return;
 
 				// TODO: optimize
 				let length = -1;
+				let lengthIns = -1;
 				for(const name in mesh.buffers) {
 					const buffer = mesh.buffers[name];
-					if (buffer.type !== 0) continue;
-					if (length == -1) length = buffer.length;
-					else if (length !== buffer.length) return;
+					if (buffer.type == 0) {
+						if (length == -1) length = buffer.length;
+						else if (length !== buffer.length) return;
+					} else if (buffer.type == 1) {
+						if (lengthIns == -1) lengthIns = buffer.length;
+						else if (lengthIns !== buffer.length) return;
+					}
 				}
 				if (length == -1) return;
 
