@@ -275,10 +275,12 @@
 		}
 	}
 	class Buffer {
-		constructor() {
+		constructor(type) {
 			this.buffer = gl.createBuffer();
+			this.bytesPerEl = 1;
 			this.size = 1;
 			this.length = 0;
+			this.type = type;
 		}
 		destroy() {
 			gl.deleteBuffer(this.buffer);
@@ -1115,20 +1117,21 @@ void main() {
 		}
 		return new typedArray(value);
 	}
-	function uploadBuffer(mesh, name, value, size) {
+	function uploadBuffer(mesh, name, value, size, type, target=gl.ARRAY_BUFFER) {
 		if (!mesh || !value) return;
 		if (mesh.uploadOffset < 0) {
-			const buffer = mesh.myBuffers[name] ?? (mesh.myBuffers[name] = new Buffer());
-			gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-			gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
+			const buffer = mesh.myBuffers[name] ?? (mesh.myBuffers[name] = new Buffer(type));
+			gl.bindBuffer(target, buffer.buffer);
+			gl.bufferData(target, value, mesh.uploadUsage);
 			buffer.size = size;
 			buffer.length = value.length / size;
+			buffer.bytesPerEl = value.BYTES_PER_ELEMENT;
 			mesh.update();
 		} else {
-			const buffer = mesh.myBuffers.colors;
-			if (!buffer || mesh.uploadOffset + value.length >= buffer.length || buffer.size !== size) return;
-			gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-			gl.bufferSubData(gl.ARRAY_BUFFER, mesh.uploadOffset * size, value);
+			const buffer = mesh.myBuffers[name];
+			if (!buffer || buffer.size !== size || mesh.uploadOffset * size + value.length > buffer.length * size) return;
+			gl.bindBuffer(target, buffer.buffer);
+			gl.bufferSubData(target, mesh.uploadOffset * size * value.BYTES_PER_ELEMENT, value);
 		}
 	}
 
@@ -1489,12 +1492,7 @@ void main() {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compactIndices(target, INDICES);
 				if (!mesh || !value) return;
-				const buffer = mesh.myBuffers.indices ?? (mesh.myBuffers.indices = new Buffer());
-				gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer.buffer);
-				gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, value, gl.STATIC_DRAW);
-				buffer.size = value.BYTES_PER_ELEMENT;
-				buffer.length = value.length;
-				mesh.update();
+				uploadBuffer(mesh, "indices", value, 1, -1, gl.ELEMENT_ARRAY_BUFFER);
 			}
 		},
 		{
@@ -1522,7 +1520,7 @@ void main() {
 			def: function({NAME, X, Y}, {target}) {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [X, Y], Float32Array);
-				uploadBuffer(mesh, "position", value, 2);
+				uploadBuffer(mesh, "position", value, 2, 0);
 			}
 		},
 		{
@@ -1550,7 +1548,7 @@ void main() {
 			def: function({NAME, X, Y, Z}, {target}) {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [X, Y, Z], Float32Array);
-				uploadBuffer(mesh, "position", value, 3);
+				uploadBuffer(mesh, "position", value, 3, 0);
 			}
 		},
 		{
@@ -1578,7 +1576,7 @@ void main() {
 			def: function({NAME, R, G, B}, {target}) {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [R, G, B], Uint8Array);
-				uploadBuffer(mesh, "colors", value, 3);
+				uploadBuffer(mesh, "colors", value, 3, 0);
 			}
 		},
 		{
@@ -1610,7 +1608,7 @@ void main() {
 			def: function({NAME, R, G, B, A}, {target}) {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [R, G, B, A], Uint8Array);
-				uploadBuffer(mesh, "colors", value, 4);
+				uploadBuffer(mesh, "colors", value, 4, 0);
 			}
 		},
 		{
@@ -1635,7 +1633,7 @@ void main() {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [U, V], Float32Array);
 				if (!mesh || !value) return;
-				uploadBuffer(mesh, "texCoords", value, 2);
+				uploadBuffer(mesh, "texCoords", value, 2, 0);
 			}
 		},
 		{
@@ -1705,7 +1703,7 @@ void main() {
 			def: function({NAME, U, V, W}, {target}) {
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [U, V, W], Float32Array);
-				uploadBuffer(mesh, "texCoords", value, 3);
+				uploadBuffer(mesh, "texCoords", value, 3, 0);
 			}
 		},
 		{
@@ -1842,19 +1840,10 @@ void main() {
 					valueW = compact(target, [WEIGHTS], Uint16Array, 65535);
 					if (!valueW || valueW.length % COUNT > 0 || valueW.length !== valueI.length) return;
 				}
-				const bufferI = mesh.myBuffers.boneIndices ?? (mesh.myBuffers.boneIndices = new Buffer());
-				gl.bindBuffer(gl.ARRAY_BUFFER, bufferI.buffer);
-				gl.bufferData(gl.ARRAY_BUFFER, valueI, gl.STATIC_DRAW);
-				bufferI.size = COUNT;
-				bufferI.length = valueI.length / COUNT;
+				uploadBuffer(mesh, "boneIndices", valueI, COUNT, 0);
 				if (COUNT > 1) {
-					const bufferW = mesh.myBuffers.boneWeights ?? (mesh.myBuffers.boneWeights = new Buffer());
-					gl.bindBuffer(gl.ARRAY_BUFFER, bufferW.buffer);
-					gl.bufferData(gl.ARRAY_BUFFER, valueW, gl.STATIC_DRAW);
-					bufferW.size = COUNT;
-					bufferW.length = valueW.length / COUNT;
+					uploadBuffer(mesh, "boneIndices", valueW, COUNT, 0);
 				}
-				mesh.update();
 			}
 		},
 		{
@@ -1924,7 +1913,49 @@ void main() {
 				if (!bufferName) return;
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [SRCLIST], type);
-				uploadBuffer(mesh, bufferName, value, size);
+				uploadBuffer(mesh, bufferName, value, size, 1);
+			}
+		},
+		{
+			opcode: "setMeshUploadOffset",
+			blockType: BlockType.COMMAND,
+			text: "set [NAME] list update offset [OFFSET]",
+			arguments: {
+				NAME: {
+					type: ArgumentType.STRING,
+					defaultValue: "my mesh"
+				},
+				OFFSET: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 1
+				},
+			},
+			def: function({NAME, OFFSET}, {target}) {
+				const mesh = meshes.get(Cast.toString(NAME));
+				if (!mesh) return;
+				mesh.uploadOffset = Cast.toNumber(OFFSET)-1;
+			}
+		},
+		{
+			opcode: "setBufferUsageHint",
+			text: "set [NAME] optimize next uploaded lists for being [USAGE] updated",
+			arguments: {
+				NAME: {
+					type: ArgumentType.STRING,
+					defaultValue: "my mesh"
+				},
+				USAGE: {
+					type: ArgumentType.STRING,
+					menu: "bufferUsage",
+					defaultValue: "rarely"
+				}
+			},
+			def: function({NAME, USAGE}) {
+				const mesh = meshes.get(Cast.toString(NAME));
+				if (!mesh) return;
+				if (USAGE == "rarely") mesh.uploadUsage = gl.STATIC_DRAW;
+				if (USAGE == "frequently fully") mesh.uploadUsage = gl.STREAM_DRAW;
+				if (USAGE == "frequently partially") mesh.uploadUsage = gl.DYNAMIC_DRAW;
 			}
 		},
 		{
@@ -1954,29 +1985,16 @@ void main() {
 					if (!output) return;
 					if (output.xyz) {
 						const value = new Float32Array(output.xyz);
-						const buffer = mesh.myBuffers.position ?? (mesh.myBuffers.position = new Buffer());
-						gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-						gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-						buffer.size = 3;
-						buffer.length = value.length / 3;
+						uploadBuffer(mesh, "position", value, 3, 0);
 					}
 					if (output.rgba) {
 						const value = new Uint8Array(output.rgba);
-						const buffer = mesh.myBuffers.colors ?? (mesh.myBuffers.colors = new Buffer());
-						gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-						gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-						buffer.size = 4;
-						buffer.length = value.length / 4;
+						uploadBuffer(mesh, "colors", value, 4, 0);
 					}
 					if (output.uv) {
 						const value = new Float32Array(output.uv);
-						const buffer = mesh.myBuffers.texCoords ?? (mesh.myBuffers.texCoords = new Buffer());
-						gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
-						gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);
-						buffer.size = 2;
-						buffer.length = value.length / 2;
+						uploadBuffer(mesh, "texCoords", value, 2, 0);
 					}
-					mesh.update();
 				})();
 			}
 		},
@@ -2166,12 +2184,10 @@ void main() {
 				// TODO: optimize
 				let length = -1;
 				for(const name in mesh.buffers) {
-					if (name == "indices") continue;
-					if (name == "instanceTransforms") continue;
-					if (name == "instanceColors") continue;
-					if (name == "instanceUVOffsets") continue;
-					if (length == -1) length = mesh.buffers[name].length;
-					else if (length !== mesh.buffers[name].length) return;
+					const buffer = mesh.buffers[name];
+					if (buffer.type !== 0) continue;
+					if (length == -1) length = buffer.length;
+					else if (length !== buffer.length) return;
 				}
 				if (length == -1) return;
 
@@ -2311,21 +2327,21 @@ void main() {
 				let start = 0;
 				let amount = mesh.buffers.indices ? mesh.buffers.indices.length : length;
 				if (mesh.data.drawRange) {
-					const size = mesh.buffers.indices ? mesh.buffers.indices.size : 1;
+					const size = mesh.buffers.indices ? mesh.buffers.indices.bytesPerEl : 1;
 					start = mesh.data.drawRange[0] * size;
 					amount = mesh.data.drawRange[1];
 				}
 				if (mesh.buffers.instanceTransforms) {
 					if (mesh.buffers.indices) {
 						const indexTypes = [null, gl.UNSIGNED_BYTE, gl.UNSIGNED_SHORT, null, gl.UNSIGNED_INT];
-						gl.drawElementsInstanced(mesh.data.primitives ?? gl.TRIANGLES, amount, indexTypes[mesh.buffers.indices.size], start, mesh.buffers.instanceTransforms.length);
+						gl.drawElementsInstanced(mesh.data.primitives ?? gl.TRIANGLES, amount, indexTypes[mesh.buffers.indices.bytesPerEl], start, mesh.buffers.instanceTransforms.length);
 					} else {
 						gl.drawArraysInstanced(mesh.data.primitives ?? gl.TRIANGLES, start, amount, mesh.buffers.instanceTransforms.length);
 					}
 				} else {
 					if (mesh.buffers.indices) {
 						const indexTypes = [null, gl.UNSIGNED_BYTE, gl.UNSIGNED_SHORT, null, gl.UNSIGNED_INT];
-						gl.drawElements(mesh.data.primitives ?? gl.TRIANGLES, amount, indexTypes[mesh.buffers.indices.size], start);
+						gl.drawElements(mesh.data.primitives ?? gl.TRIANGLES, amount, indexTypes[mesh.buffers.indices.bytesPerEl], start);
 					} else {
 						gl.drawArrays(mesh.data.primitives ?? gl.TRIANGLES, start, amount);
 					}
@@ -3564,6 +3580,10 @@ void main() {
 					directions: {
 						acceptReporters: true,
 						items: ["up", "down", "left", "right"]
+					},
+					bufferUsage: {
+						acceptReporters: true,
+						items: ["rarely", "frequently fully", "frequently partially"]
 					}
 				}
 			};
@@ -3576,7 +3596,7 @@ void main() {
 		}
 		listsMenu() {
 			const stage = vm.runtime.getTargetForStage();
-			const editingTarget = vm.editingTarget;
+			const editingTarget = vm.editingTarget !== stage ? vm.editingTarget : null;
 			const local = editingTarget ? Object.values(editingTarget.variables).filter(v => v.type == "list").map(v => v.name) : [];
 			const global = stage ? Object.values(stage.variables).filter(v => v.type == "list").map(v => v.name) : [];
 			const all = [...local, ...global];
