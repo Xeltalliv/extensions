@@ -243,26 +243,6 @@
 		},
 	};
 	/* End of m4 */
-/*
-	const ogl = gl;
-	gl = {}
-	for(let i in ogl) {
-		if(typeof ogl[i] == "function") {
-			gl[i] = function(...args) {
-				let res = ogl[i](...args);
-				if(res === undefined) {
-					console.log("gl."+i+"(",...args,")");
-				} else {
-					console.log("gl."+i+"(",...args,") =>",res);
-				}
-				return res;
-			}
-		}
-		if(typeof ogl[i] == "number") {
-			gl[i] = ogl[i];
-		}
-	}
-	gl.__proto__ = ogl; //*/
 
 	class Logger {
 		logErrors = false;
@@ -821,7 +801,9 @@
 precision highp float;
 
 in vec4 a_position;
+#ifdef COLORS
 in vec4 a_color;
+#endif
 #ifdef TEXTURES
 #if TEXTURES == 2
 in vec2 a_uv;
@@ -856,7 +838,10 @@ in mat4 a_instanceTransform;
 in vec4 a_instanceColor;
 #endif
 #ifdef INSTANCE_UV
-in vec2 a_instanceUv;
+in vec2 a_instanceUV;
+#endif
+#ifdef INSTANCE_UVS
+in vec4 a_instanceUV;
 #endif
 
 out vec4 v_color;
@@ -917,18 +902,26 @@ void main() {
 #ifdef TEXTURES
 #if TEXTURES == 2
 	vec2 uv = a_uv;
-#ifdef UV_OFFSET
-	uv += u_uvOffset;
+#ifdef INSTANCE_UVS
+	uv *= a_instanceUV.zw;
+	uv += a_instanceUV.xy;
 #endif
 #ifdef INSTANCE_UV
-	uv += a_instanceUv;
+	uv += a_instanceUV.xy;
+#endif
+#ifdef UV_OFFSET
+	uv += u_uvOffset;
 #endif
 #elif TEXTURES == 3
 	vec3 uv = a_uv;
 #endif
 #endif
 	gl_Position = u_projection * view;
+#ifdef COLORS
 	vec4 color = a_color;
+#else
+	vec4 color = vec4(1);
+#endif
 #ifdef INSTANCE_COLOR
 	color *= a_instanceColor;
 #endif
@@ -974,7 +967,7 @@ void main() {
 #else
 	vec4 color = vec4(1);
 #endif
-#ifdef COLORS
+#if defined(COLORS) || defined(INSTANCE_COLOR)
 	color = color * v_color;
 #endif
 #ifdef ALPHATEST
@@ -1145,7 +1138,7 @@ void main() {
 	const runtime = vm.runtime;
 
 	const canvas = document.createElement("canvas");
-	const gl = canvas.getContext("webgl2");
+	let gl = canvas.getContext("webgl2");
 	const ext_af = gl.getExtension("EXT_texture_filter_anisotropic") || gl.getExtension("MOZ_EXT_texture_filter_anisotropic") || gl.getExtension("WEBKIT_EXT_texture_filter_anisotropic");
 	gl.enable(gl.DEPTH_TEST);
 	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
@@ -1182,6 +1175,7 @@ void main() {
 	const publicApi = runtime.ext_xeltallivsimple3d ?? (runtime.ext_xeltallivsimple3d = {});
 	const externalTransforms = publicApi.externalTransforms ?? (publicApi.externalTransforms = {});
 	const canvasRenderTarget = new CanvasRenderTarget();
+	window.meshes = meshes; // !!!!!
 
 	let currentRenderTarget;
 	let transforms;
@@ -1906,9 +1900,10 @@ void main() {
 				if (PROPERTY == "XY positions"           ) {bufferName = "instanceTransforms"; size = 2;  type = Float32Array;}
 				if (PROPERTY == "XYZ positions"          ) {bufferName = "instanceTransforms"; size = 3;  type = Float32Array;}
 				if (PROPERTY == "XYZ positions and sizes") {bufferName = "instanceTransforms"; size = 4;  type = Float32Array;}
-				if (PROPERTY == "RGB colors"             ) {bufferName = "instanceColors";     size = 3;  type = Uint8Array;  }
-				if (PROPERTY == "RGBA colors"            ) {bufferName = "instanceColors";     size = 4;  type = Uint8Array;  }
+				if (PROPERTY == "RGB colors"             ) {bufferName = "instanceColors";     size = 3;  type = Float32Array;}
+				if (PROPERTY == "RGBA colors"            ) {bufferName = "instanceColors";     size = 4;  type = Float32Array;}
 				if (PROPERTY == "UV offsets"             ) {bufferName = "instanceUVOffsets";  size = 2;  type = Float32Array;}
+				if (PROPERTY == "UV offsets and sizes"   ) {bufferName = "instanceUVOffsets";  size = 4;  type = Float32Array;}
 				if (!bufferName) return;
 				const mesh = meshes.get(Cast.toString(NAME));
 				const value = compact(target, [SRCLIST], type);
@@ -2213,7 +2208,7 @@ void main() {
 					if (mesh.buffers.instanceTransforms.size == 16) flags.push("INSTANCE_MATRIX");
 				}
 				if (mesh.buffers.instanceColors) flags.push("INSTANCE_COLOR");
-				if (mesh.buffers.instanceUVOffsets) flags.push("INSTANCE_UV");
+				if (mesh.buffers.instanceUVOffsets) flags.push(mesh.buffers.instanceUVOffsets.size == 4 ? "INSTANCE_UVS" : "INSTANCE_UV");
 				const program = programs.get(flags);
 				gl.useProgram(program.program);
 				
@@ -2265,6 +2260,18 @@ void main() {
 						gl.vertexAttribPointer(program.aloc.a_instanceTransform, mesh.buffers.instanceTransforms.size, gl.FLOAT, false, 0, 0);
 						gl.vertexAttribDivisor(program.aloc.a_instanceTransform, 1);
 					}
+				}
+				if (mesh.buffers.instanceColors) {
+					gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.instanceColors.buffer);
+					gl.enableVertexAttribArray(program.aloc.a_instanceColor);
+					gl.vertexAttribPointer(program.aloc.a_instanceColor, mesh.buffers.instanceColors.size, gl.FLOAT, false, 0, 0);
+					gl.vertexAttribDivisor(program.aloc.a_instanceColor, 1);
+				}
+				if (mesh.buffers.instanceUVOffsets) {
+					gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.instanceUVOffsets.buffer);
+					gl.enableVertexAttribArray(program.aloc.a_instanceUV);
+					gl.vertexAttribPointer(program.aloc.a_instanceUV, mesh.buffers.instanceUVOffsets.size, gl.FLOAT, false, 0, 0);
+					gl.vertexAttribDivisor(program.aloc.a_instanceUV, 1);
 				}
 
 				const blending = mesh.data.blending ?? "default";
@@ -2379,6 +2386,14 @@ void main() {
 						gl.disableVertexAttribArray(program.aloc.a_instanceTransform);
 						gl.vertexAttribDivisor(program.aloc.a_instanceTransform, 0);
 					}
+				}
+				if (mesh.buffers.instanceColors) {
+					gl.disableVertexAttribArray(program.aloc.a_instanceColor);
+					gl.vertexAttribDivisor(program.aloc.a_instanceColor, 0);
+				}
+				if (mesh.buffers.instanceUVOffsets) {
+					gl.disableVertexAttribArray(program.aloc.a_instanceUV);
+					gl.vertexAttribDivisor(program.aloc.a_instanceUV, 0);
 				}
 			}
 		},
@@ -3567,7 +3582,7 @@ void main() {
 					},
 					instanceProperty: {
 						acceptReporters: false,
-						items: ["transforms", "XY positions", "XYZ positions", "XYZ positions and sizes", "RGB colors", "RGBA colors", "UV offsets"]
+						items: ["transforms", "XY positions", "XYZ positions", "XYZ positions and sizes", "RGB colors", "RGBA colors", "UV offsets", "UV offsets and sizes"]
 					},
 					renderTargetProperty: {
 						acceptReporters: false,
@@ -3630,6 +3645,27 @@ void main() {
 		if(block == "---") continue;
 		Extension.prototype[block.opcode ?? block.func] = block.def;
 	}
+
+/*
+	const ogl = gl;
+	gl = {}
+	for(let i in ogl) {
+		if(typeof ogl[i] == "function") {
+			gl[i] = function(...args) {
+				let res = ogl[i](...args);
+				if(res === undefined) {
+					console.log("gl."+i+"(",...args,")");
+				} else {
+					console.log("gl."+i+"(",...args,") =>",res);
+				}
+				return res;
+			}
+		}
+		if(typeof ogl[i] == "number") {
+			gl[i] = ogl[i];
+		}
+	}
+	gl.__proto__ = ogl; //*/
 
 	Scratch.extensions.register(new Extension());
 })(Scratch);
