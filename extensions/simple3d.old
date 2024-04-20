@@ -1,0 +1,16 @@
+/*
+				const mesh = meshes.get(Cast.toString(NAME));
+				const listX = target.lookupVariableByNameAndType(X, "list");
+				const listY = target.lookupVariableByNameAndType(Y, "list");
+				const listZ = target.lookupVariableByNameAndType(Z, "list");
+				if (!mesh || !listX || !listY || !listZ) return;
+				if (listX.value.length !== listY.value.length || listX.value.length !== listZ.value.length) return;
+				const value = new Float32Array(listX.value.length * 3);
+				for(let i=0, j=0; i<listX.value.length; i++) {
+					value[j++] = Cast.toNumber(listX.value[i]);
+					value[j++] = Cast.toNumber(listY.value[i]);
+					value[j++] = Cast.toNumber(listZ.value[i]);
+				}
+				const buffer = mesh.buffers.position ?? (mesh.buffers.position = gl.createBuffer());
+				gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+				gl.bufferData(gl.ARRAY_BUFFER, value, gl.STATIC_DRAW);*/
