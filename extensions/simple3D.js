@@ -861,6 +861,7 @@ uniform mat4 u_model;
 uniform mat4 u_bones[BONE_COUNT];
 #endif
 uniform vec2 u_uvOffset;
+uniform vec3 u_fog_position;
 
 void main() {
 	vec4 pos = a_position;
@@ -881,6 +882,9 @@ void main() {
 	      u_bones[int(a_index.w)] * a_position * a_weight.w;
 #endif
 #endif
+#ifdef FOG_IN_MODEL_SPACE
+	v_viewpos = pos.xyz;
+#endif
 	pos = u_model * pos;
 #ifdef INSTANCE_POS_SCALE
 	pos.xyz *= a_instanceTransform.w;
@@ -897,7 +901,17 @@ void main() {
 #endif
 	vec4 view = u_view * pos;
 #ifdef BILLBOARD
+#ifdef INSTANCE_MATRIX
+	pos2 = a_instanceTransform * vec4(pos2.xyz, 0);
+#endif
 	view += pos2;
+#ifdef FOG_IN_WORLD_SPACE
+	v_viewpos = vec4(inverse(u_view) * view).xyz;
+#endif
+#else
+#ifdef FOG_IN_WORLD_SPACE
+	v_viewpos = pos.xyz;
+#endif
 #endif
 #ifdef TEXTURES
 #if TEXTURES == 2
@@ -929,7 +943,12 @@ void main() {
 #ifdef TEXTURES
 	v_uv = uv;
 #endif
+#ifdef FOG_IN_VIEW_SPACE
 	v_viewpos = view.xyz;
+#endif
+#ifdef FOG_POS
+	v_viewpos -= u_fog_position;
+#endif
 }
 `;
 	const fshSrc = `
@@ -1186,6 +1205,8 @@ void main() {
 	let fogColor;
 	let fogDistance;
 	let fogEnabled;
+	let fogPosition;
+	let fogSpace;
 	let imageSource;
 	let imageSourceSync;
 	let currentBlending;
@@ -1210,6 +1231,8 @@ void main() {
 		fogColor = [1,1,1];
 		fogDistance = [10,90];
 		fogEnabled = false;
+		fogPosition = null;
+		fogSpace = "view space";
 		imageSource = null;
 		imageSourceSync = null;
 		currentBlending = "unset";
@@ -2193,7 +2216,13 @@ void main() {
 				let flags = [];
 				if (mesh.buffers.colors) flags.push("COLORS");
 				if (mesh.buffers.texCoords) flags.push(`TEXTURES ${mesh.buffers.texCoords.size}`);
-				if (fogEnabled) flags.push("FOG");
+				if (fogEnabled) {
+					flags.push("FOG");
+					if (fogSpace == "view space" ) flags.push("FOG_IN_VIEW_SPACE");
+					if (fogSpace == "world space") flags.push("FOG_IN_WORLD_SPACE");
+					if (fogSpace == "model space") flags.push("FOG_IN_MODEL_SPACE");
+					if (fogPosition) flags.push("FOG_POS");
+				}
 				if (mesh.buffers.boneIndices && mesh.bonesDiff) {
 					flags.push(`SKINNING ${mesh.buffers.boneIndices.size}`);
 					flags.push(`BONE_COUNT ${mesh.bonesDiff.length/16}`);
@@ -2319,6 +2348,7 @@ void main() {
 				if (fogEnabled) {
 					gl.uniform3fv(program.uloc.u_fog_color, fogColor);
 					gl.uniform2fv(program.uloc.u_fog_dist, fogDistance);
+					if (fogPosition) gl.uniform3fv(program.uloc.u_fog_position, fogPosition);
 				}
 				if (mesh.data.alphaTest > 0) {
 					gl.uniform1f(program.uloc.u_alpha_threshold, mesh.data.alphaTest);
@@ -3385,6 +3415,39 @@ void main() {
 			}
 		},
 		{
+			opcode: "setFogPosition",
+			blockType: BlockType.COMMAND,
+			text: "set fog [SPACE] origin at X: [X] Y: [Y] Z: [Z]",
+			arguments: {
+				SPACE: {
+					type: ArgumentType.STRING,
+					defaultValue: "view space",
+					menu: "fogSpace"
+				},
+				X: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 0
+				},
+				Y: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 0
+				},
+				Z: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 0
+				},
+			},
+			def: function({SPACE, X, Y, Z}) {
+				fogSpace = Cast.toString(SPACE);
+				fogPosition = [
+					Cast.toNumber(X),
+					Cast.toNumber(Y),
+					Cast.toNumber(Z)
+				];
+				if (fogPosition[0] == 0 && fogPosition[1] == 0 && fogPosition[2] == 0) fogPosition = null;
+			}
+		},
+		{
 			blockType: BlockType.LABEL,
 			text: "Resolution changes"
 		},
@@ -3558,6 +3621,10 @@ void main() {
 						items: ["projected", "view space", "world space", "model space"]
 					},
 					vectorTransformsMin2: {
+						acceptReporters: false,
+						items: ["view space", "world space", "model space"]
+					},
+					fogSpace: {
 						acceptReporters: false,
 						items: ["view space", "world space", "model space"]
 					},
