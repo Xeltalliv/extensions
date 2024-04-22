@@ -1,10 +1,9 @@
-// !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-// FINISH REMOVING num()
-// !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
+// https://github.com/Xeltalliv/extensions/blob/webgl2-dev/extensions/webgl2.js
 
 (function(Scratch) {
 	"use strict";
+
+	setTimeout(() => alert("(WebGL2 extension / Arpil 2024) Please refrain from adding it to your collections of usable extensions, because it's still far from a usable state."), 3000);
 
 	if (!Scratch.extensions.unsandboxed) {
 		throw new Error("WebGL extension must be run unsandboxed");
@@ -20,6 +19,22 @@
 		Float32Array,
 		Float64Array
 	}
+	const WebGLTypes = [
+		WebGLVertexArrayObject,
+		WebGLUniformLocation,
+		WebGLTransformFeedback,
+		WebGLTexture,
+		WebGLSync,
+		WebGLShader,
+		WebGLSampler,
+		WebGLRenderbuffer,
+		WebGLQuery,
+		WebGLProgram,
+		WebGLFramebuffer,
+		WebGLContextEvent,
+		WebGLBuffer,
+		WebGLActiveInfo
+	];
 	const Category = {
 		BUFFERS: "Buffers",
 		VAO: "VAO",
@@ -37,116 +52,113 @@
 		RENDERING: "Rendering",
 		WRITEOPTIONS: "Write Options",
 	}
+	const ArgumentType = {
+		...Scratch.ArgumentType,
+		"LIST":                   "list",
+		"VECTOR":                 "vector",
+		"PROPERTY":               "property",
+		"WebGLVertexArrayObject": "WebGLVertexArrayObject",
+		"WebGLUniformLocation":   "WebGLUniformLocation",
+		"WebGLTransformFeedback": "WebGLTransformFeedback",
+		"WebGLTexture":           "WebGLTexture",
+		"WebGLSync":              "WebGLSync",
+		"WebGLShader":            "WebGLShader",
+		"WebGLSampler":           "WebGLSampler",
+		"WebGLRenderbuffer":      "WebGLRenderbuffer",
+		"WebGLQuery":             "WebGLQuery",
+		"WebGLProgram":           "WebGLProgram",
+		"WebGLFramebuffer":       "WebGLFramebuffer",
+		"WebGLBuffer":            "WebGLBuffer"
+	};
+	const {BlockType, Cast, vm} = Scratch;
+	const {renderer, runtime} = vm;
 
-//https://registry.khronos.org/webgl/specs/latest/2.0/#TEXTURE_PIXELS_TYPE_TABLE
-	let gl2typed = `Int8Array BYTE
-Uint8Array UNSIGNED_BYTE
-Uint8ClampedArray UNSIGNED_BYTE
-Int16Array SHORT
-Uint16Array UNSIGNED_SHORT
-Uint16Array UNSIGNED_SHORT_5_6_5
-Uint16Array UNSIGNED_SHORT_5_5_5_1
-Uint16Array UNSIGNED_SHORT_4_4_4_4
-Int32Array INT
-Uint32Array UNSIGNED_INT
-Uint32Array UNSIGNED_INT_5_9_9_9_REV
-Uint32Array UNSIGNED_INT_2_10_10_10_REV
-Uint32Array UNSIGNED_INT_10F_11F_11F_REV
-Uint32Array UNSIGNED_INT_24_8
-Uint16Array HALF_FLOAT
-Float32Array FLOAT`
-
-	const ArgumentType = Scratch.ArgumentType;
-	const BlockType = Scratch.BlockType;
-	const Cast = Scratch.Cast;
 	const num  = Cast.toNumber;
 	const str  = Cast.toString;
 	const bool = Cast.toBoolean;
-	let   Skin = null;
-	const vm = Scratch.vm;
-	const renderer = vm.renderer;
-	const runtime = vm.runtime;
-	//const readbackFB = renderer.gl.createFramebuffer();
 
+	let OUTPUT_LIST = [];
 
-//TEMPORARY!!!!!!
-if(window.ScratchBlocks) {
-	ScratchBlocks.defineBlocksWithJsonArray = function(jsonArray) {
-		for (var i = 0; i < jsonArray.length; i++) {
-			let jsonDef = jsonArray[i];
-			if (!jsonDef) {
-				console.warn(
-					'Block definition #' + i + ' in JSON array is ' + jsonDef + '. ' +
-					'Skipping.');
-			} else {
-				var typename = jsonDef.type;
-				if (typename == null || typename === '') {
-					console.warn(
-						'Block definition #' + i +
-						' in JSON array is missing a type attribute. Skipping.');
-				} else {
-					if (ScratchBlocks.Blocks[typename]) {
-						/*console.warn(
-							'Block definition #' + i + ' in JSON array' +
-							' overwrites prior definition of "' + typename + '".');*/
-					}
-					ScratchBlocks.Blocks[typename] = {init: function() {
-						let block = this;
-						let row = 0;
-						while(jsonDef["args"+row]) {
-							let blockArgs = jsonDef["args"+row];
-							for(let arg of blockArgs) {
-								if(typeof arg.options === "function") {
-									const menuGen = arg.options;
-									arg.options = function(...args) {
-										return menuGen(...args, block.id);
-									}
-								}
-							}
-							row++;
-						}
-						this.jsonInit(jsonDef);
-					}}
-				}
-			}
+	let canvas, gl;
+
+	let onContextRecreatedCbs = [];
+	function recreateContext(params) {
+		let newCanvas = document.createElement("canvas");
+		if (canvas) {
+			newCanvas.width  = canvas.width;
+			newCanvas.height = canvas.height;
+		} else {
+			newCanvas.width  = 480;
+			newCanvas.height = 360;
 		}
-	};
-}
-//END
+		let newGl = newCanvas.getContext("webgl2", params);
+		if (!newGl) return;
+		canvas = newCanvas;
+		window.gl = gl = newGl;
+		renderer.dirty = true;
+		runtime.requestRedraw();
+		onContextRecreatedCbs.forEach(fn => fn(canvas, gl));
+	}
+	recreateContext({ preserveDrawingBuffer: true });
 
-	const canvas = document.createElement("canvas", { preserveDrawingBuffer: true });
-	canvas.width = 480;
-	canvas.height = 360;
-	let gl = canvas.getContext("webgl2");
-	window.gl = gl;
 
+	//https://registry.khronos.org/webgl/specs/latest/2.0/#TEXTURE_PIXELS_TYPE_TABLE
+	const GlTypeToTypedArray = {
+		[gl.BYTE]: Int8Array,
+		[gl.UNSIGNED_BYTE]: Uint8Array,
+		[gl.UNSIGNED_BYTE]: Uint8ClampedArray,
+		[gl.SHORT]: Int16Array,
+		[gl.UNSIGNED_SHORT]: Uint16Array,
+		[gl.UNSIGNED_SHORT_5_6_5]: Uint16Array,
+		[gl.UNSIGNED_SHORT_5_5_5_1]: Uint16Array,
+		[gl.UNSIGNED_SHORT_4_4_4_4]: Uint16Array,
+		[gl.INT]: Int32Array,
+		[gl.UNSIGNED_INT]: Uint32Array,
+		[gl.UNSIGNED_INT_5_9_9_9_REV]: Uint32Array,
+		[gl.UNSIGNED_INT_2_10_10_10_REV]: Uint32Array,
+		[gl.UNSIGNED_INT_10F_11F_11F_REV]: Uint32Array,
+		[gl.UNSIGNED_INT_24_8]: Uint32Array,
+		[gl.HALF_FLOAT]: Uint16Array,
+		[gl.FLOAT]: Float32Array
+	}
+	const GlTypeFitsChannels = {
+		[gl.BYTE]: 1,
+		[gl.UNSIGNED_BYTE]: 1,
+		[gl.UNSIGNED_BYTE]: 1,
+		[gl.SHORT]: 1,
+		[gl.UNSIGNED_SHORT]: 1,
+		[gl.UNSIGNED_SHORT_5_6_5]: 2,
+		[gl.UNSIGNED_SHORT_5_5_5_1]: 4,
+		[gl.UNSIGNED_SHORT_4_4_4_4]: 4,
+		[gl.INT]: 1,
+		[gl.UNSIGNED_INT]: 1,
+		[gl.UNSIGNED_INT_5_9_9_9_REV]: 4,
+		[gl.UNSIGNED_INT_2_10_10_10_REV]: 4,
+		[gl.UNSIGNED_INT_10F_11F_11F_REV]: 4,
+		[gl.UNSIGNED_INT_24_8]: 2,
+		[gl.HALF_FLOAT]: 1,
+		[gl.FLOAT]: 1
+	}
+	const GlFormatChannels = {
+		[gl.RED]: 1,
+		[gl.RED_INTEGER]: 1,
+		[gl.ALPHA]: 1,
+		[gl.RG]: 2,
+		[gl.RG_INTEGER]: 2,
+		[gl.RGB]: 3,
+		[gl.RGB_INTEGER]: 3,
+		[gl.RGBA]: 4,
+		[gl.RGBA_INTEGER]: 4
+	}
 
-
-	gl2typed = Object.fromEntries(gl2typed.split("\n").map(e => {
-		let split = e.split(" ");
-		return [gl[split[1]], window[split[0]]];
-	}));
-
-	
 
 	let skin = null;
 	let skinId = null;
 	let drawableId = null;
 
-	console.log(gl.__proto__);
-
-	const allConsts = [];
-	Object.entries(Object.getOwnPropertyDescriptors(gl.__proto__))
-	.filter(([, desc]) => desc.hasOwnProperty('value') && typeof desc.value !== 'function')
-	.forEach(([key]) => {
-		if(typeof gl[key] == "number") {
-			allConsts.push({text: "gl."+key, value: ""+gl[key]});
-		}
-	});
-
 	// Obtain Skin
 	let tempSkin = renderer.createTextSkin("say", "", true);
-	Skin = renderer._allSkins[tempSkin].__proto__.__proto__.constructor;
+	let Skin = renderer._allSkins[tempSkin].__proto__.__proto__.constructor;
 	renderer.destroySkin(tempSkin);
 
 	class SimpleSkin extends Skin {
@@ -159,9 +171,9 @@ if(window.ScratchBlocks) {
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-			//gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0,255,0,255]));
 			this._texture = texture;
-			this._rotationCenter = [240,180];
+			this._rotationCenter = [240, 180];
+			this._renderer = renderer; // vanilla Scratch compat
 		}
 		dispose() {
 			if(this._texture) {
@@ -180,7 +192,7 @@ if(window.ScratchBlocks) {
 			const gl = this._renderer.gl;
 			gl.bindTexture(gl.TEXTURE_2D, this._texture);
 			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-			this.emitWasAltered();
+			this.emitWasAltered ? this.emitWasAltered() : this.emit(Skin.Events.WasAltered); // vanilla Scratch compat
 		}
 	}
 
@@ -189,7 +201,6 @@ if(window.ScratchBlocks) {
 	let copy = renderer._groupOrdering.slice();
 	copy.splice(index, 0, "webgl2");
 	renderer.setLayerGroupOrdering(copy);
-
 
 	// Create drawable and skin
 	skinId = renderer._nextSkinId++;
@@ -203,25 +214,166 @@ if(window.ScratchBlocks) {
 		if(this.dirty) redraw();
 		drawOriginal.call(this);
 	}
-
 	function redraw() {
 		skin.setContent(canvas);
 		runtime.requestRedraw();
 	}
 
 
-	let objectStorage = new Map();
-	let objectStorageInv = new Map();
-	let objectId = 0;
 
-	function addToStorage(value, ...args) {
-		if(!value) return "";
-		objectStorage.set(objectId, [value, ...args]);
-		objectStorageInv.set(value, objectId);
-		return objectId++;
+
+	const allConsts = [];
+	const glEnumName = {};
+	Object.entries(Object.getOwnPropertyDescriptors(gl.__proto__))
+	.filter(([, desc]) => desc.hasOwnProperty("value") && typeof desc.value !== "function")
+	.forEach(([key]) => {
+		if(typeof gl[key] == "number") {
+			allConsts.push({text: "gl."+key, value: ""+gl[key]});
+			let old = glEnumName[gl[key]];
+			if (old) {
+				old += " ";
+			} else {
+				old = "";
+			}
+			glEnumName[gl[key]] = old+key;
+		}
+	});
+
+
+	class ObjectStorage {
+		constructor() {
+			this.id2ob = new Map(); // id -> [object, type, extra]
+			this.ob2id = new Map(); // object -> id
+			this.id = 1;
+			onContextRecreatedCbs.push(this.clear.bind(this));
+		}
+		getTyped(id, type) {
+			const res = this.id2ob.get(num(id));
+			if (!res || res[1] !== type) return null;
+			return res[0];
+		}
+		getTypedWithExtra(id, type) {
+			const res = this.id2ob.get(num(id));
+			if (!res || res[1] !== type) return [null, null];
+			return [res[0], res[2]];
+		}
+		get(id) {
+			const res = this.id2ob.get(num(id));
+			if (res) return res[0];
+			return null;
+		}
+		getIdByObject(object) {
+			return this.ob2id.get(object);
+		}
+		add(object, type, extra) {
+			if (!object) return null;
+			this.id2ob.set(this.id, [object, type, extra]);
+			this.ob2id.set(object, this.id);
+			return this.id++;
+		}
+		deleteById(id) {
+			id = num(id);
+			const object = this.id2ob.get(id)[0];
+			this.id2ob.delete(id);
+			this.ob2id.delete(object);
+		}
+		deleteByObject(object) {
+			const id = this.ob2id.get(object);
+			this.id2ob.delete(id);
+			this.ob2id.delete(object);
+		}
+		clear() {
+			this.id2ob.forEach((item) => {
+				const o = item[0];
+				const t = item[1];
+				if (t == "WebGLBuffer")            gl.deleteBuffer(o);
+				if (t == "WebGLFramebuffer")       gl.deleteFramebuffer(o);
+				if (t == "WebGLProgram")           gl.deleteProgram(o);
+				if (t == "WebGLQuery")             gl.deleteQuery(o);
+				if (t == "WebGLRenderbuffer")      gl.deleteRenderbuffer(o);
+				if (t == "WebGLSampler")           gl.deleteSampler(o);
+				if (t == "WebGLShader")            gl.deleteShader(o);
+				if (t == "WebGLSync")              gl.deleteSync(o);
+				if (t == "WebGLTexture")           gl.deleteTexture(o);
+				if (t == "WebGLTransformFeedback") gl.deleteTransformFeedback(o);
+				if (t == "WebGLVertexArray")       gl.deleteVertexArray(o);
+			});
+			this.id2ob.clear();
+			this.ob2id.clear();
+			this.id = 1;
+		}
 	}
 
+	let objectStorage = window.objectStorage = new ObjectStorage();
+
+	function sanitizeOutput(value) {
+		const type = typeof value;
+		if (type == "number" || type == "boolean" || type  == "string") return value;
+		if (Array.isArray(value) || ArrayBuffer.isView(value)) {
+			OUTPUT_LIST = value;
+			return "[list]";
+		}
+		const id = objectStorage.getIdByObject(value);
+		if (id) return id;
+		for(let type of WebGLTypes) {
+			if (value instanceof type) {
+				const extra = {};
+				if (type.name == "WebGLProgram") extra.uniforms = {};
+				return objectStorage.add(value, type.name, extra);
+			}
+		}
+		return "";
+	}
+
+	// TODO: use
+	function getCostume(COSTUME, target) {
+		const costume = COSTUME === "current" ? target.getCurrentCostume() : target.getCostumes()[target.getCostumeIndexByName(str(COSTUME))];
+		if (!costume) return;
+		const skin = renderer._allSkins[costume.skinId];
+		if (!skin._textureSize) return; // Not bitmap
+		const texture = skin.getTexture();
+		const width = skin._textureSize[0];
+		const height = skin._textureSize[1];
+		const rgl = renderer.gl;
+		const fb = rgl.createFramebuffer();
+		rgl.bindFramebuffer(rgl.FRAMEBUFFER, fb);
+		rgl.framebufferTexture2D(rgl.FRAMEBUFFER, rgl.COLOR_ATTACHMENT0, rgl.TEXTURE_2D, texture, 0);
+		if (rgl.checkFramebufferStatus(rgl.FRAMEBUFFER) !== rgl.FRAMEBUFFER_COMPLETE) return;
+		const pixels = new Uint8Array(width * height * 4);
+		rgl.readPixels(0, 0, width, height, rgl.RGBA, rgl.UNSIGNED_BYTE, pixels);
+		rgl.bindFramebuffer(rgl.FRAMEBUFFER, null);
+		rgl.deleteFramebuffer(fb);
+		return {pixels, width, height};
+	}
+	function copyArrayInto(src, dest, start, length) {
+		if (start > dest.length) {
+			const oldLength = dest.length;
+			dest[start-1] = 0;
+			dest.fill(0, oldLength, start);
+		}
+		for(let i=0, j=start; i<length; i++, j++) {
+			dest[j] = src[i];
+		}
+	}
+
+
 	let definitions = [
+		{
+			opcode: "recreateContext",
+			blockType: BlockType.COMMAND,
+			text: "recreate context with [PARAMS]",
+			arguments: {
+				PARAMS: {
+					type: ArgumentType.STRING,
+					defaultValue: '{"preserveDrawingBuffer":true}'
+				},
+			},
+			def: function({PARAMS}) {
+				try {
+					recreateContext(JSON.parse(PARAMS));
+				} finally {};
+			}
+		},
 		{
 			opcode: "resizeCanvas",
 			blockType: BlockType.COMMAND,
@@ -256,48 +408,69 @@ if(window.ScratchBlocks) {
 				return CONSTANT;
 			}
 		},
+		{
+			opcode: "getName",
+			blockType: BlockType.REPORTER,
+			text: "name of [CONSTANT]",
+			arguments: {
+				CONSTANT: {
+					type: ArgumentType.NUMBER
+				},
+			},
+			def: function({CONSTANT}) {
+				return glEnumName[str(CONSTANT)] || "";
+			}
+		},
+		{
+			opcode: "outputToList",
+			blockType: BlockType.COMMAND,
+			text: "output [VALUE] to list [OUTPUT]",
+			arguments: {
+				VALUE: {
+					type: ArgumentType.EMPTY
+				},
+				OUTPUT: {
+					type: ArgumentType.EMPTY,
+					menu: "lists",
+					defaultValue: ""
+				},
+			},
+			def: function({VALUE, OUTPUT}) {
+				if (VALUE !== "[list]") return;
+				const list = target.lookupVariableByNameAndType(OUTPUT, "list");
+				if(!list) return;
+				list.value = Array.from(OUTPUT_LIST);
+			}
+		},
 		"---",
 		{
-			opcode: "activeTexture",
+			glfn: "activeTexture",
 			category: Category.TEXTURES,
 			blockType: BlockType.COMMAND,
-			text: "gl.activeTexture [TEXTURE]",
 			arguments: {
 				TEXTURE: {
 					type: ArgumentType.NUMBER,
 					menu: "textureUnits"
 				},
 			},
-			def: function({TEXTURE}) {
-				gl.activeTexture(TEXTURE);
-			}
 		},
 		{
-			opcode: "attachShader",
+			glfn: "attachShader",
 			category: Category.PROGRAMS,
 			blockType: BlockType.COMMAND,
-			text: "gl.attachShader [PROGRAM] [SHADER]",
 			arguments: {
 				PROGRAM: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLProgram,
 				},
 				SHADER: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLShader,
 				},
 			},
-			def: function({PROGRAM, SHADER}) {
-				const program = objectStorage.get(num(PROGRAM));
-				const shader = objectStorage.get(num(SHADER));
-				if(!program || program[1] !== "program") return;
-				if(!shader || shader[1] !== "shader") return;
-				gl.attachShader(program[0], shader[0]);
-			}
 		},
 		{
-			opcode: "beginQuery",
+			glfn: "beginQuery",
 			category: Category.QUERIES,
 			blockType: BlockType.COMMAND,
-			text: "gl.beginQuery [TARGET] [QUERY]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -305,20 +478,14 @@ if(window.ScratchBlocks) {
 					defaultValue: gl.ANY_SAMPLES_PASSED
 				},
 				QUERY: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLQuery
 				},
 			},
-			def: function({TARGET, QUERY}) {
-				const query = objectStorage.get(QUERY);
-				if(!query || query[1] !== "query") return;
-				gl.beginQuery(TARGET, query[0]);
-			}
 		},
 		{
-			opcode: "beginTransformFeedback",
+			glfn: "beginTransformFeedback",
 			category: Category.TRANSFORMFEEDBACK,
 			blockType: BlockType.COMMAND,
-			text: "gl.beginTransformFeedback [PRIMITIVES]",
 			arguments: {
 				PRIMITIVES: {
 					type: ArgumentType.NUMBER,
@@ -326,20 +493,98 @@ if(window.ScratchBlocks) {
 					defaultValue: gl.POINTS
 				}
 			},
-			def: function({PRIMITIVES}) {
-				gl.beginTransformFeedback(PRIMITIVES);
-			}
 		},
-/*bindAttribLocation
-bindBufferBase
-bindBufferRange
-bindRenderbuffer
-bindSampler*/
 		{
-			opcode: "bindTransformFeedback",
+			glfn: "bindAttribLocation",
+			category: Category.ATTRIBUTES,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				PROGRAM: {
+					type: ArgumentType.WebGLProgram
+				},
+				INDEX: {
+					type: ArgumentType.NUMBER
+				},
+				NAME: {
+					type: ArgumentType.STRING
+				}
+			},
+		},
+		{
+			glfn: "bindBufferBase",
+			category: Category.BUFFERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "bindBufferTarget",
+					defaultValue: gl.TRANSFORM_FEEDBACK_BUFFER
+				},
+				INDEX: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 0
+				},
+				BUFFER: {
+					type: ArgumentType.WebGLBuffer
+				}
+			},
+		},
+		{
+			glfn: "bindBufferRange",
+			category: Category.BUFFERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "bindBufferTarget",
+					defaultValue: gl.TRANSFORM_FEEDBACK_BUFFER
+				},
+				INDEX: {
+					type: ArgumentType.NUMBER
+				},
+				BUFFER: {
+					type: ArgumentType.WebGLBuffer
+				},
+				OFFSET: {
+					type: ArgumentType.NUMBER
+				},
+				SIZE: {
+					type: ArgumentType.NUMBER
+				}
+			},
+		},
+		{
+			glfn: "bindRenderbuffer",
+			category: Category.RENDERBUFFERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "renderbufferTarget",
+					defaultValue: gl.RENDERBUFFER
+				},
+				RENDERBUFFER: {
+					type: ArgumentType.WebGLRenderbuffer
+				}
+			},
+		},
+		{
+			glfn: "bindSampler",
+			category: Category.SAMPLERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				UNIT: {
+					type: ArgumentType.NUMBER
+				},
+				SAMPLER: {
+					type: ArgumentType.WebGLSampler
+				}
+			},
+		},
+		{
+			glfn: "bindTransformFeedback",
 			category: Category.TRANSFORMFEEDBACK,
 			blockType: BlockType.COMMAND,
-			text: "gl.bindTransformFeedback [TARGET] [TRANSFORMFEEDBACK]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -347,36 +592,24 @@ bindSampler*/
 					defaultValue: gl.TRANSFORM_FEEDBACK
 				},
 				TRANSFORMFEEDBACK: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLTransformFeedback,
 				},
 			},
-			def: function({TARGET, TRANSFORMFEEDBACK}) {
-				let tf = objectStorage.get(TRANSFORMFEEDBACK);
-				if(!tf || tf[1] !== "transform feedback") return;
-				gl.bindTransformFeedback(TARGET, tf[0]);
-			}
 		},
 		{
-			opcode: "bindVertexArray",
+			glfn: "bindVertexArray",
 			category: Category.VAO,
 			blockType: BlockType.COMMAND,
-			text: "gl.bindVertexArray [VAO]",
 			arguments: {
 				VAO: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLVertexArrayObject,
 				},
 			},
-			def: function({VAO}) {
-				let vao = objectStorage.get(num(VAO));
-				if(!vao || vao[1] !== "vertex array") return;
-				gl.bindVertexArray(vao[0]);
-			}
 		},
 		{
-			opcode: "blendColor",
+			glfn: "blendColor",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.blendColor [RED] [GREEN] [BLUE] [ALPHA]",
 			arguments: {
 				RED: {
 					type: ArgumentType.NUMBER,
@@ -391,15 +624,11 @@ bindSampler*/
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({RED, GREEN, BLUE, ALPHA}) {
-				gl.blendColor(RED, GREEN, BLUE, ALPHA);
-			}
 		},
 		{
-			opcode: "blendEquation",
+			glfn: "blendEquation",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.blendEquation [MODE]",
 			arguments: {
 				MODE: {
 					type: ArgumentType.NUMBER,
@@ -407,15 +636,11 @@ bindSampler*/
 					defaultValue: gl.FUNC_ADD
 				},
 			},
-			def: function({MODE}) {
-				gl.blendEquation(MODE);
-			}
 		},
 		{
-			opcode: "blendEquationSeparate",
+			glfn: "blendEquationSeparate",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.blendEquationSeparate [MODERGB] [MODEA]",
 			arguments: {
 				MODERGB: {
 					type: ArgumentType.NUMBER,
@@ -428,15 +653,11 @@ bindSampler*/
 					defaultValue: gl.FUNC_ADD
 				},
 			},
-			def: function({MODERGB, MODEA}) {
-				gl.blendEquationSeparate(MODERGB, MODEA);
-			}
 		},
 		{
-			opcode: "blendFunc",
+			glfn: "blendFunc",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.blendFunc [SRC] [DST]",
 			arguments: {
 				SRC: {
 					type: ArgumentType.NUMBER,
@@ -449,15 +670,11 @@ bindSampler*/
 					defaultValue: gl.ONE_MINUS_SRC_ALPHA
 				}
 			},
-			def: function({SRC, DST}) {
-				gl.blendFunc(SRC, DST);
-			}
 		},
 		{
-			opcode: "blendFuncSeparate",
+			glfn: "blendFuncSeparate",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.blendFuncSeparate [SRCRGB] [DSTRGB] [SRCA] [DSTA]",
 			arguments: {
 				SRCRGB: {
 					type: ArgumentType.NUMBER,
@@ -480,15 +697,12 @@ bindSampler*/
 					defaultValue: gl.ONE_MINUS_SRC_ALPHA
 				}
 			},
-			def: function({SRCRGB, DSTRGB, SRCA, DSTA}) {
-				gl.blendFuncSeparate(SRCRGB, DSTRGB, SRCA, DSTA);
-			}
 		},
 		{
-			opcode: "blitFramebuffer",
+			glfn: "blitFramebuffer",
 			category: Category.RENDERING,
 			blockType: BlockType.COMMAND,
-			text: "gl.blitFramebuffer [SRCX1] [SRCY1] [SRCX2] [SRCY2] [DSTX1] [DSTY1] [DSTX2] [DSTY2] [MASK] [FILTER]",
+			needsRefresh: true,
 			arguments: {
 				SRCX1: {
 					type: ArgumentType.NUMBER,
@@ -523,17 +737,11 @@ bindSampler*/
 					menu: "textureFiltering"
 				}
 			},
-			def: function({SRCX1,SRCY1,SRCX2,SRCY2,DSTX1,DSTY1,DSTX2,DSTY2,MASK,FILTER}) {
-				gl.blitFramebuffer(SRCX1,SRCY1,SRCX2,SRCY2,DSTX1,DSTY1,DSTX2,DSTY2,MASK,FILTER);
-				renderer.dirty = true;   //TODO: only if canvas (framebuffer is null)
-				runtime.requestRedraw(); //TODO
-			}
 		},
 		{
-			opcode: "bufferData1",
+			glfn: "bufferData-1",
 			category: Category.BUFFERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.bufferData [TARGET] [USAGE]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -544,15 +752,11 @@ bindSampler*/
 					menu: "bufferUsage"
 				},
 			},
-			def: function({TARGET, USAGE}) {
-				gl.bufferData(TARGET, USAGE);
-			}
 		},
 		{
-			opcode: "bufferData2",
+			glfn: "bufferData-2",
 			category: Category.BUFFERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.bufferData [TARGET] [SIZE] [USAGE]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -566,51 +770,32 @@ bindSampler*/
 					type: ArgumentType.NUMBER,
 					menu: "bufferUsage"
 				},
-				SRCOFFSET: {
-					type: ArgumentType.NUMBER
-				},
 			},
-			def: function({TARGET, SIZE, USAGE}) {
-				gl.bufferData(TARGET, SIZE, USAGE, SRCOFFSET);
-			}
 		},
 		{
-			opcode: "bufferData3",
+			glfn: "bufferData-3",
 			category: Category.BUFFERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.bufferData [TARGET] [ARRAYTYPE] [DATA] [USAGE]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
 					menu: "bufferTarget"
 				},
-				ARRAYTYPE: {
-					type: ArgumentType.STRING,
-					menu: "typedArrays",
-					defaultValue: "Float32Array"
-				},
 				DATA: {
-					type: ArgumentType.STRING,
-					menu: "lists",
-					defaultValue: ""
+					type: ArgumentType.LIST,
+					typedArray: true,
+					typeLookup: "TypedArrays"
 				},
 				USAGE: {
 					type: ArgumentType.NUMBER,
 					menu: "bufferUsage"
 				},
 			},
-			def: function({TARGET, ARRAYTYPE, DATA, USAGE},{target}) {
-				const list = target.lookupVariableByNameAndType(DATA, "list");
-				if(!list) return;
-				let data = new (TypedArrays[ARRAYTYPE])(list.value.map(Number));
-				gl.bufferData(TARGET, data, USAGE);
-			}
 		},
 		{
-			opcode: "bufferData4",
+			glfn: "bufferData-4",
 			category: Category.BUFFERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.bufferData [TARGET] [USAGE] [SRCOFFSET]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -624,29 +809,20 @@ bindSampler*/
 					type: ArgumentType.NUMBER
 				},
 			},
-			def: function({TARGET, USAGE, SRCOFFSET}) {
-				gl.bufferData(TARGET, USAGE, SRCOFFSET);
-			}
 		},
 		{
-			opcode: "bufferData5",
+			glfn: "bufferData-5",
 			category: Category.BUFFERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.bufferData [TARGET] [ARRAYTYPE] [DATA] [USAGE] [SRCOFFSET]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
 					menu: "bufferTarget"
 				},
-				ARRAYTYPE: {
-					type: ArgumentType.STRING,
-					menu: "typedArrays",
-					defaultValue: "Float32Array"
-				},
 				DATA: {
-					type: ArgumentType.STRING,
-					menu: "lists",
-					defaultValue: ""
+					type: ArgumentType.LIST,
+					typedArray: true,
+					typeLookup: "TypedArrays"
 				},
 				USAGE: {
 					type: ArgumentType.NUMBER,
@@ -656,32 +832,20 @@ bindSampler*/
 					type: ArgumentType.NUMBER
 				},
 			},
-			def: function({TARGET, ARRAYTYPE, DATA, USAGE, SRCOFFSET},{target}) {
-				const list = target.lookupVariableByNameAndType(DATA, "list");
-				if(!list) return;
-				let data = new (TypedArrays[ARRAYTYPE])(list.value);
-				gl.bufferData(TARGET, data, USAGE, SRCOFFSET);
-			}
 		},
 		{
-			opcode: "bufferData6",
+			glfn: "bufferData-6",
 			category: Category.BUFFERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.bufferData [TARGET] [ARRAYTYPE] [DATA] [USAGE] [SRCOFFSET] [LENGTH]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
 					menu: "bufferTarget"
 				},
-				ARRAYTYPE: {
-					type: ArgumentType.STRING,
-					menu: "typedArrays",
-					defaultValue: "Float32Array"
-				},
 				DATA: {
-					type: ArgumentType.STRING,
-					menu: "lists",
-					defaultValue: ""
+					type: ArgumentType.LIST,
+					typedArray: true,
+					typeLookup: "TypedArrays"
 				},
 				USAGE: {
 					type: ArgumentType.NUMBER,
@@ -694,23 +858,123 @@ bindSampler*/
 					type: ArgumentType.NUMBER
 				},
 			},
-			def: function({TARGET, ARRAYTYPE, DATA, USAGE, SRCOFFSET, LENGTH},{target}) {
-				const list = target.lookupVariableByNameAndType(DATA, "list");
-				if(!list) return;
-				let data = new (TypedArrays[ARRAYTYPE])(list.value);
-				gl.bufferData(TARGET, data, USAGE, SRCOFFSET, LENGTH);
-			}
 		},
-/*bufferSubData
-checkFramebufferStatus*/
 		{
-			opcode: "clientWaitSync",
+			glfn: "bufferSubData-1",
+			category: Category.BUFFERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferTarget"
+				},
+				OFFSET: {
+					type: ArgumentType.NUMBER,
+				},
+			},
+		},
+		{
+			glfn: "bufferSubData-2",
+			category: Category.BUFFERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferTarget"
+				},
+				OFFSET: {
+					type: ArgumentType.NUMBER,
+				},
+				DATA: {
+					type: ArgumentType.LIST,
+					typedArray: true,
+					typeLookup: "TypedArrays"
+				},
+			},
+		},
+		{
+			glfn: "bufferSubData-3",
+			category: Category.BUFFERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferTarget"
+				},
+				DSTOFFSET: {
+					type: ArgumentType.NUMBER,
+				},
+				SRCOFFSET: {
+					type: ArgumentType.NUMBER,
+				},
+			},
+		},
+		{
+			glfn: "bufferSubData-4",
+			category: Category.BUFFERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferTarget"
+				},
+				DSTOFFSET: {
+					type: ArgumentType.NUMBER,
+				},
+				DATA: {
+					type: ArgumentType.LIST,
+					typedArray: true,
+					typeLookup: "TypedArrays"
+				},
+				SRCOFFSET: {
+					type: ArgumentType.NUMBER,
+				},
+			},
+		},
+		{
+			glfn: "bufferSubData-5",
+			category: Category.BUFFERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferTarget"
+				},
+				DSTOFFSET: {
+					type: ArgumentType.NUMBER,
+				},
+				DATA: {
+					type: ArgumentType.LIST,
+					typedArray: true,
+					typeLookup: "TypedArrays"
+				},
+				SRCOFFSET: {
+					type: ArgumentType.NUMBER,
+				},
+				LENGTH: {
+					type: ArgumentType.NUMBER,
+				},
+			},
+		},
+		{
+			glfn: "checkFramebufferStatus",
+			category: Category.FRAMEBUFFERS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "framebufferTarget",
+					defaultValue: gl.FRAMEBUFFER
+				}
+			},
+		},
+		{
+			glfn: "clientWaitSync",
 			category: Category.SYNC,
 			blockType: BlockType.REPORTER,
-			text: "gl.clientWaitSync [SYNC] [FLAGS] [TIMEOUT]",
 			arguments: {
 				SYNC: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLSync
 				},
 				FLAGS: {
 					type: ArgumentType.NUMBER
@@ -719,145 +983,226 @@ checkFramebufferStatus*/
 					type: ArgumentType.NUMBER
 				},
 			},
-			def: function({SYNC, FLAGS, TIMEOUT}) {
-				let sync = objectStorage.get(num(SYNC));
-				if(!sync || sync[1] !== "sync") return;
-				return gl.clientWaitSync(sync[0], FLAGS, TIMEOUT);
-			}
 		},
 		{
-			opcode: "compileShader",
+			glfn: "compileShader",
 			category: Category.SHADERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.compileShader [SHADER]",
 			arguments: {
 				SHADER: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLShader
 				},
 			},
-			def: function({SHADER}) {
-				let shader = objectStorage.get(num(SHADER));
-				if(!shader || shader[1] !== "shader") return;
-				gl.compileShader(shader[0]);
-			}
 		},
 /*compressedTexImage2D
 compressedTexImage3D
 compressedTexSubImage2D
-compressedTexSubImage3D
-copyBufferSubData
-copyTexImage2D
-copyTexSubImage2D
-copyTexSubImage3D*/
+compressedTexSubImage3D*/
 		{
-			opcode: "createBuffer",
+			glfn: "copyBufferSubData",
+			category: Category.BUFFERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				RTARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferReadWriteTarget",
+					defaultValue: gl.ARRAY_BUFFER
+				},
+				WTARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferReadWriteTarget",
+					defaultValue: gl.ELEMENT_ARRAY_BUFFER
+				},
+				ROFFSET: {
+					type: ArgumentType.NUMBER
+				},
+				WOFFSET: {
+					type: ArgumentType.NUMBER
+				},
+				SIZE: {
+					type: ArgumentType.NUMBER
+				}
+			},
+		},
+		{
+			glfn: "copyTexImage2D",
+			category: Category.TEXTURES,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "textureTarget2",
+					defaultValue: gl.TEXTURE_2D
+				},
+				LEVEL: {
+					type: ArgumentType.NUMBER
+				},
+				INTERNALFORMAT: {
+					type: ArgumentType.NUMBER,
+					menu: "internalFormat2",
+					defaulValue: gl.RGBA
+				},
+				X: {
+					type: ArgumentType.NUMBER
+				},
+				Y: {
+					type: ArgumentType.NUMBER
+				},
+				WIDTH: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 16
+				},
+				HEIGHT: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 16
+				},
+				BORDER: {
+					type: ArgumentType.NUMBER
+				},
+			},
+		},
+		{
+			glfn: "copyTexSubImage2D",
+			category: Category.TEXTURES,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "textureTarget2",
+					defaultValue: gl.TEXTURE_2D
+				},
+				LEVEL: {
+					type: ArgumentType.NUMBER
+				},
+				INTERNALFORMAT: {
+					type: ArgumentType.NUMBER,
+					menu: "internalFormat2",
+					defaulValue: gl.RGBA
+				},
+				XOFFSET: {
+					type: ArgumentType.NUMBER
+				},
+				YOFFSET: {
+					type: ArgumentType.NUMBER
+				},
+				X: {
+					type: ArgumentType.NUMBER
+				},
+				Y: {
+					type: ArgumentType.NUMBER
+				},
+				WIDTH: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 16
+				},
+				HEIGHT: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 16
+				},
+			},
+		},
+		{
+			glfn: "copyTexSubImage3D",
+			category: Category.TEXTURES,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "textureTarget3",
+					defaultValue: gl.TEXTURE_3D
+				},
+				LEVEL: {
+					type: ArgumentType.NUMBER
+				},
+				INTERNALFORMAT: {
+					type: ArgumentType.NUMBER,
+					menu: "internalFormat2",
+					defaulValue: gl.RGBA
+				},
+				XOFFSET: {
+					type: ArgumentType.NUMBER
+				},
+				YOFFSET: {
+					type: ArgumentType.NUMBER
+				},
+				ZOFFSET: {
+					type: ArgumentType.NUMBER
+				},
+				X: {
+					type: ArgumentType.NUMBER
+				},
+				Y: {
+					type: ArgumentType.NUMBER
+				},
+				WIDTH: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 16
+				},
+				HEIGHT: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 16
+				},
+			},
+		},
+		{
+			glfn: "createBuffer",
 			category: Category.BUFFERS,
 			blockType: BlockType.REPORTER,
-			text: "gl.createBuffer",
-			disableMonitor: true,
-			def: function() {
-				return addToStorage(gl.createBuffer(), "buffer");
-			}
 		},
 		{
-			opcode: "createFramebuffer",
+			glfn: "createFramebuffer",
 			category: Category.FRAMEBUFFERS,
 			blockType: BlockType.REPORTER,
-			text: "gl.createFramebuffer",
-			disableMonitor: true,
-			def: function() {
-				return addToStorage(gl.createFramebuffer(), "framebuffer");
-			}
 		},
 		{
-			opcode: "createProgram",
+			glfn: "createProgram",
 			category: Category.PROGRAMS,
 			blockType: BlockType.REPORTER,
-			text: "gl.createProgram",
-			disableMonitor: true,
-			def: function() {
-				return addToStorage(gl.createProgram(), "program", {uniforms:{}});
-			}
 		},
 		{
-			opcode: "createQuery",
+			glfn: "createQuery",
 			category: Category.QUERIES,
 			blockType: BlockType.REPORTER,
-			text: "gl.createQuery",
-			disableMonitor: true,
-			def: function() {
-				return addToStorage(gl.createQuery(), "query");
-			}
 		},
 		{
-			opcode: "createRenderbuffer",
+			glfn: "createRenderbuffer",
 			category: Category.RENDERBUFFERS,
 			blockType: BlockType.REPORTER,
-			text: "gl.createRenderbuffer",
-			disableMonitor: true,
-			def: function() {
-				return addToStorage(gl.createRenderbuffer(), "renderbuffer");
-			}
 		},
 		{
-			opcode: "createSampler",
+			glfn: "createSampler",
 			category: Category.SAMPLERS,
 			blockType: BlockType.REPORTER,
-			text: "gl.createSampler",
-			disableMonitor: true,
-			def: function() {
-				return addToStorage(gl.createSampler(), "sampler");
-			}
 		},
 		{
-			opcode: "createShader",
+			glfn: "createShader",
 			category: Category.SHADERS,
 			blockType: BlockType.REPORTER,
-			text: "gl.createShader [TYPE]",
 			arguments: {
 				TYPE: {
 					type: ArgumentType.NUMBER,
 					menu: "shaderType"
 				},
 			},
-			def: function({TYPE}) {
-				return addToStorage(gl.createShader(TYPE), "shader");
-			}
 		},
 		{
-			opcode: "createTexture",
+			glfn: "createTexture",
 			category: Category.TEXTURES,
 			blockType: BlockType.REPORTER,
-			text: "gl.createTexture",
-			disableMonitor: true,
-			def: function() {
-				return addToStorage(gl.createTexture(), "texture");
-			}
 		},
 		{
-			opcode: "createTransformFeedback",
+			glfn: "createTransformFeedback",
 			category: Category.TRANSFORMFEEDBACK,
 			blockType: BlockType.REPORTER,
-			text: "gl.createTransformFeedback",
-			disableMonitor: true,
-			def: function() {
-				return addToStorage(gl.createTransformFeedback(), "transform feedback");
-			}
 		},
 		{
-			opcode: "createVertexArray",
+			glfn: "createVertexArray",
 			category: Category.VAO,
 			blockType: BlockType.REPORTER,
-			text: "gl.createVertexArray",
-			disableMonitor: true,
-			def: function() {
-				return addToStorage(gl.createVertexArray(), "vertex array");
-			}
 		},
 		{
-			opcode: "cullFace",
+			glfn: "cullFace",
 			blockType: BlockType.COMMAND,
-			text: "gl.cullFace [FACE]",
 			arguments: {
 				FACE: {
 					type: ArgumentType.NUMBER,
@@ -865,296 +1210,191 @@ copyTexSubImage3D*/
 					defaultValue: gl.BACK
 				},
 			},
-			def: function({FACE}) {
-				gl.cullFace(num(FACE));
-			}
 		},
 		{
-			opcode: "deleteBuffer",
+			glfn: "deleteBuffer",
 			category: Category.BUFFERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.deleteBuffer [THINGTODELETE]",
 			arguments: {
 				THINGTODELETE: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLBuffer
 				},
 			},
-			def: function({THINGTODELETE}) {
-				let thingToDelete = objectStorage.get(THINGTODELETE);
-				if(!thingToDelete || thingToDelete[1] !== "buffer") return;
-				gl.deleteBuffer(thingToDelete[0]);
-				objectStorage.delete(THINGTODELETE);
-				objectStorageInv.delete(thingToDelete);
-			}
+			deletes: true,
 		},
 		{
-			opcode: "deleteFramebuffer",
+			glfn: "deleteFramebuffer",
 			category: Category.FRAMEBUFFERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.deleteFramebuffer [THINGTODELETE]",
 			arguments: {
 				THINGTODELETE: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLFramebuffer
 				},
 			},
-			def: function({THINGTODELETE}) {
-				let thingToDelete = objectStorage.get(THINGTODELETE);
-				if(!thingToDelete || thingToDelete[1] !== "framebuffer") return;
-				gl.deleteFramebuffer(thingToDelete[0]);
-				objectStorage.delete(THINGTODELETE);
-				objectStorageInv.delete(thingToDelete);
-			}
+			deletes: true,
 		},
 		{
-			opcode: "deleteProgram",
+			glfn: "deleteProgram",
 			category: Category.PROGRAMS,
 			blockType: BlockType.COMMAND,
-			text: "gl.deleteProgram [THINGTODELETE]",
 			arguments: {
 				THINGTODELETE: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLProgram
 				},
 			},
-			def: function({THINGTODELETE}) {
-				let thingToDelete = objectStorage.get(num(THINGTODELETE));
-				if(!thingToDelete || thingToDelete[1] !== "program") return;
-				gl.deleteProgram(thingToDelete[0]);
-				objectStorage.delete(THINGTODELETE);
-				objectStorageInv.delete(thingToDelete);
-			}
+			deletes: true,
 		},
 		{
-			opcode: "deleteQuery",
+			glfn: "deleteQuery",
 			category: Category.QUERIES,
 			blockType: BlockType.COMMAND,
-			text: "gl.deleteQuery [THINGTODELETE]",
 			arguments: {
 				THINGTODELETE: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLQuery
 				},
 			},
-			def: function({THINGTODELETE}) {
-				let thingToDelete = objectStorage.get(num(THINGTODELETE));
-				if(!thingToDelete || thingToDelete[1] !== "query") return;
-				gl.deleteQuery(thingToDelete[0]);
-				objectStorage.delete(THINGTODELETE);
-				objectStorageInv.delete(thingToDelete);
-			}
+			deletes: true,
 		},
 		{
-			opcode: "deleteRenderbuffer",
+			glfn: "deleteRenderbuffer",
 			category: Category.RENDERBUFFERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.deleteRenderbuffer [THINGTODELETE]",
 			arguments: {
 				THINGTODELETE: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLRenderbuffer
 				},
 			},
-			def: function({THINGTODELETE}) {
-				let thingToDelete = objectStorage.get(num(THINGTODELETE));
-				if(!thingToDelete || thingToDelete[1] !== "renderbuffer") return;
-				gl.deleteRenderbuffer(thingToDelete[0]);
-				objectStorage.delete(THINGTODELETE);
-				objectStorageInv.delete(thingToDelete);
-			}
+			deletes: true,
 		},
 		{
-			opcode: "deleteSampler",
+			glfn: "deleteSampler",
 			category: Category.SAMPLERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.deleteSampler [THINGTODELETE]",
 			arguments: {
 				THINGTODELETE: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLSampler
 				},
 			},
-			def: function({THINGTODELETE}) {
-				let thingToDelete = objectStorage.get(num(THINGTODELETE));
-				if(!thingToDelete || thingToDelete[1] !== "sampler") return;
-				gl.deleteSampler(thingToDelete[0]);
-				objectStorage.delete(THINGTODELETE);
-				objectStorageInv.delete(thingToDelete);
-			}
+			deletes: true,
 		},
 		{
-			opcode: "deleteShader",
+			glfn: "deleteShader",
 			category: Category.SHADERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.deleteShader [THINGTODELETE]",
 			arguments: {
 				THINGTODELETE: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLShader
 				},
 			},
-			def: function({THINGTODELETE}) {
-				let thingToDelete = objectStorage.get(num(THINGTODELETE));
-				if(!thingToDelete || thingToDelete[1] !== "shader") return;
-				gl.deleteShader(thingToDelete[0]);
-				objectStorage.delete(THINGTODELETE);
-				objectStorageInv.delete(thingToDelete);
-			}
+			deletes: true,
 		},
 		{
-			opcode: "deleteSync",
+			glfn: "deleteSync",
 			category: Category.SYNC,
 			blockType: BlockType.COMMAND,
-			text: "gl.deleteSync [THINGTODELETE]",
 			arguments: {
 				THINGTODELETE: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLSync
 				},
 			},
-			def: function({THINGTODELETE}) {
-				let thingToDelete = objectStorage.get(num(THINGTODELETE));
-				if(!thingToDelete || thingToDelete[1] !== "sync") return;
-				gl.deleteSync(thingToDelete[0]);
-				objectStorage.delete(THINGTODELETE);
-				objectStorageInv.delete(thingToDelete);
-			}
+			deletes: true,
 		},
 		{
-			opcode: "deleteTexture",
+			glfn: "deleteTexture",
 			category: Category.TEXTURES,
 			blockType: BlockType.COMMAND,
-			text: "gl.deleteTexture [THINGTODELETE]",
 			arguments: {
 				THINGTODELETE: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLTexture
 				},
 			},
-			def: function({THINGTODELETE}) {
-				let thingToDelete = objectStorage.get(num(THINGTODELETE));
-				if(!thingToDelete || thingToDelete[1] !== "texture") return;
-				gl.deleteTexture(thingToDelete[0]);
-				objectStorage.delete(THINGTODELETE);
-				objectStorageInv.delete(thingToDelete);
-			}
+			deletes: true,
 		},
 		{
-			opcode: "deleteTransformFeedback",
+			glfn: "deleteTransformFeedback",
 			category: Category.TRANSFORMFEEDBACK,
 			blockType: BlockType.COMMAND,
-			text: "gl.deleteTransformFeedback [THINGTODELETE]",
 			arguments: {
 				THINGTODELETE: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLTransformFeedback
 				},
 			},
-			def: function({THINGTODELETE}) {
-				let thingToDelete = objectStorage.get(num(THINGTODELETE));
-				if(!thingToDelete || thingToDelete[1] !== "transform feedback") return;
-				gl.deleteTransformFeedback(thingToDelete[0]);
-				objectStorage.delete(THINGTODELETE);
-				objectStorageInv.delete(thingToDelete);
-			}
+			deletes: true,
 		},
 		{
-			opcode: "deleteVertexArray",
+			glfn: "deleteVertexArray",
 			category: Category.VAO,
 			blockType: BlockType.COMMAND,
-			text: "gl.deleteVertexArray [THINGTODELETE]",
 			arguments: {
 				THINGTODELETE: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLVertexArrayObject
 				},
 			},
-			def: function({THINGTODELETE}) {
-				let thingToDelete = objectStorage.get(num(THINGTODELETE));
-				if(!thingToDelete || thingToDelete[1] !== "vertex array") return;
-				gl.deleteVertexArray(thingToDelete[0]);
-				objectStorage.delete(THINGTODELETE);
-				objectStorageInv.delete(thingToDelete);
-			}
+			deletes: true,
 		},
 		{
-			opcode: "depthFunc",
+			glfn: "depthFunc",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.depthFunc [FUNC]",
 			arguments: {
 				FUNC: {
 					type: ArgumentType.NUMBER,
 					menu: "compareFunc"
 				},
 			},
-			def: function({FUNC}) {
-				gl.depthFunc(FUNC);
-			}
 		},
 		{
-			opcode: "depthMask",
+			glfn: "depthMask",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.depthMask [FLAG]",
 			arguments: {
 				FLAG: {
 					type: ArgumentType.BOOLEAN
 				},
 			},
-			def: function({FLAG}) {
-				gl.depthMask(FLAG);
-			}
 		},
 		{
-			opcode: "depthRange",
+			glfn: "depthRange",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.depthRange [ZNEAR] [ZFAR]",
 			arguments: {
 				ZNEAR: {
 					type: ArgumentType.NUMBER,
-					defaultValue: 0
 				},
 				ZFAR: {
 					type: ArgumentType.NUMBER,
 					defaultValue: 1
 				},
 			},
-			def: function({ZNEAR, ZFAR}) {
-				gl.depthRange(ZNEAR, ZFAR);
-			}
 		},
 		{
-			opcode: "detachShader",
+			glfn: "detachShader",
 			category: Category.PROGRAMS,
 			blockType: BlockType.COMMAND,
-			text: "gl.detachShader [PROGRAM] [SHADER]",
 			arguments: {
 				PROGRAM: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLProgram,
 				},
 				SHADER: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLShader,
 				},
 			},
-			def: function({PROGRAM, SHADER}) {
-				const program = objectStorage.get(num(PROGRAM));
-				const shader = objectStorage.get(num(SHADER));
-				if(!program || program[1] !== "program") return;
-				if(!shader || shader[1] !== "shader") return;
-				gl.detachShader(program[0], shader[0]);
-			}
 		},
 		{
-			opcode: "disable",
+			glfn: "disable",
 			blockType: BlockType.COMMAND,
-			text: "gl.disable [CAPABILITY]",
 			arguments: {
 				CAPABILITY: {
 					type: ArgumentType.NUMBER,
 					menu: "capability"
 				},
 			},
-			def: function({CAPABILITY}) {
-				gl.disable(CAPABILITY);
-			}
 		},
 		{
-			opcode: "drawArraysInstanced",
+			glfn: "drawArraysInstanced",
 			category: Category.RENDERING,
 			blockType: BlockType.COMMAND,
-			text: "gl.drawArraysInstanced [PRIMITIVE] [OFFSET] [COUNT] [INSTANCES]",
+			needsRefresh: true,
 			arguments: {
 				PRIMITIVE: {
 					type: ArgumentType.NUMBER,
@@ -1172,25 +1412,17 @@ copyTexSubImage3D*/
 					defaultValue: 10
 				},
 			},
-			def: function({PRIMITIVE, OFFSET, COUNT, INSTANCES}) {
-				gl.drawArraysInstanced(PRIMITIVE,OFFSET,COUNT,INSTANCES);
-				renderer.dirty = true;   //TODO: only if canvas (framebuffer is null)
-				runtime.requestRedraw(); //TODO
-			}
 		},
 		{
-			opcode: "drawElementsInstanced",
+			glfn: "drawElementsInstanced",
 			category: Category.RENDERING,
 			blockType: BlockType.COMMAND,
-			text: "gl.drawElementsInstanced [PRIMITIVE] [COUNT] [TYPE] [OFFSET] [INSTANCES]",
+			needsRefresh: true,
 			arguments: {
 				PRIMITIVE: {
 					type: ArgumentType.NUMBER,
 					menu: "primitiveType",
 					defaultValue: gl.TRIANGLES
-				},
-				OFFSET: {
-					type: ArgumentType.NUMBER,
 				},
 				COUNT: {
 					type: ArgumentType.NUMBER,
@@ -1200,22 +1432,20 @@ copyTexSubImage3D*/
 					menu: "unsignedInts",
 					defaultValue: gl.UNSIGNED_SHORT
 				},
+				OFFSET: {
+					type: ArgumentType.NUMBER,
+				},
 				INSTANCES: {
 					type: ArgumentType.NUMBER,
 					defaultValue: 10
 				},
 			},
-			def: function({PRIMITIVE, COUNT, TYPE, OFFSET, INSTANCES}) {
-				gl.drawElementsInstanced(PRIMITIVE,COUNT,TYPE,OFFSET,INSTANCES);
-				renderer.dirty = true;   //TODO: only if canvas (framebuffer is null)
-				runtime.requestRedraw(); //TODO
-			}
 		},
 		{
-			opcode: "drawRangeElements",
+			glfn: "drawRangeElements",
 			category: Category.RENDERING,
 			blockType: BlockType.COMMAND,
-			text: "gl.drawRangeElements [PRIMITIVE] [START] [END] [COUNT] [TYPE] [OFFSET]",
+			needsRefresh: true,
 			arguments: {
 				PRIMITIVE: {
 					type: ArgumentType.NUMBER,
@@ -1228,9 +1458,6 @@ copyTexSubImage3D*/
 				END: {
 					type: ArgumentType.NUMBER,
 				},
-				OFFSET: {
-					type: ArgumentType.NUMBER,
-				},
 				COUNT: {
 					type: ArgumentType.NUMBER,
 				},
@@ -1238,58 +1465,41 @@ copyTexSubImage3D*/
 					type: ArgumentType.NUMBER,
 					menu: "unsignedInts",
 					defaultValue: gl.UNSIGNED_SHORT
-				}
+				},
+				OFFSET: {
+					type: ArgumentType.NUMBER,
+				},
 			},
-			def: function({PRIMITIVE, START, END, COUNT, TYPE, OFFSET}) {
-				gl.drawRangeElements(PRIMITIVE,START,END,COUNT,TYPE,OFFSET);
-				renderer.dirty = true;   //TODO: only if canvas (framebuffer is null)
-				runtime.requestRedraw(); //TODO
-			}
 		},
 		{
-			opcode: "enable",
+			glfn: "enable",
 			blockType: BlockType.COMMAND,
-			text: "gl.enable [CAPABILITY]",
 			arguments: {
 				CAPABILITY: {
 					type: ArgumentType.NUMBER,
 					menu: "capability"
 				},
 			},
-			def: function({CAPABILITY}) {
-				gl.enable(CAPABILITY);
-			}
 		},
 		{
-			opcode: "endQuery",
+			glfn: "endQuery",
 			category: Category.QUERIES,
 			blockType: BlockType.COMMAND,
-			text: "gl.endQuery [QUERY]",
 			arguments: {
 				QUERY: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLQuery
 				},
 			},
-			def: function({QUERY}) {
-				const query = objectStorage.get(QUERY);
-				if(!query || query[1] !== "query") return;
-				gl.endQuery(query[0]);
-			}
 		},
 		{
-			opcode: "endTransformFeedback",
+			glfn: "endTransformFeedback",
 			category: Category.TRANSFORMFEEDBACK,
 			blockType: BlockType.COMMAND,
-			text: "gl.endTransformFeedback",
-			def: function() {
-				gl.endTransformFeedback();
-			}
 		},
 		{
-			opcode: "fenceSync",
+			glfn: "fenceSync",
 			category: Category.SYNC,
 			blockType: BlockType.REPORTER,
-			text: "gl.fenceSync [CONDITION] [FLAGS]",
 			arguments: {
 				CONDITION: {
 					type: ArgumentType.NUMBER,
@@ -1298,37 +1508,99 @@ copyTexSubImage3D*/
 				},
 				FLAGS: {
 					type: ArgumentType.NUMBER,
-					defaultValue: 0
 				}
 			},
-			def: function({CONDITION, FLAGS}) {
-				return addToStorage(gl.fenceSync(CONDITION, FLAGS), "sync");
-			}
 		},
 		{
-			opcode: "finish",
+			glfn: "finish",
 			blockType: BlockType.COMMAND,
-			text: "gl.finish",
-			def: function() {
-				gl.finish();
-			}
 		},
 		{
-			opcode: "flush",
+			glfn: "flush",
 			blockType: BlockType.COMMAND,
-			text: "gl.flush",
-			def: function() {
-				gl.flush();
-			}
 		},
-/*
-framebufferRenderbuffer
-framebufferTexture2D
-framebufferTextureLayer*/
 		{
-			opcode: "frontFace",
+			glfn: "framebufferRenderbuffer",
 			blockType: BlockType.COMMAND,
-			text: "gl.frontFace [MODE]",
+			category: Category.FRAMEBUFFERS,
+			arguments: {
+				FBTARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "framebufferTarget",
+					defaultValue: gl.FRAMEBUFFER
+				},
+				ATTACHMENT: {
+					type: ArgumentType.NUMBER,
+					menu: "attachment",
+					defaultValue: gl.COLOR_ATTACHMENT0
+				},
+				RBTARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "renderbufferTarget",
+					defaultValue: gl.RENDERBUFFER
+				},
+				RENDERBUFFER: {
+					type: ArgumentType.WebGLRenderbuffer
+				}
+			},
+		},
+		{
+			glfn: "framebufferTexture2D",
+			blockType: BlockType.COMMAND,
+			category: Category.FRAMEBUFFERS,
+			arguments: {
+				FBTARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "framebufferTarget",
+					defaultValue: gl.FRAMEBUFFER
+				},
+				ATTACHMENT: {
+					type: ArgumentType.NUMBER,
+					menu: "attachment",
+					defaultValue: gl.COLOR_ATTACHMENT0
+				},
+				TEXTARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "textureTarget2",
+					defaultValue: gl.TEXTURE2D
+				},
+				TEXTURE: {
+					type: ArgumentType.WebGLTexture
+				},
+				LEVEL: {
+					type: ArgumentType.NUMBER
+				}
+			},
+		},
+		{
+			glfn: "framebufferTextureLayer",
+			blockType: BlockType.COMMAND,
+			category: Category.FRAMEBUFFERS,
+			arguments: {
+				FBTARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "framebufferTarget",
+					defaultValue: gl.FRAMEBUFFER
+				},
+				ATTACHMENT: {
+					type: ArgumentType.NUMBER,
+					menu: "attachment",
+					defaultValue: gl.COLOR_ATTACHMENT0
+				},
+				TEXTURE: {
+					type: ArgumentType.WebGLTexture
+				},
+				LEVEL: {
+					type: ArgumentType.NUMBER
+				},
+				LAYER: {
+					type: ArgumentType.NUMBER
+				}
+			},
+		},
+		{
+			glfn: "frontFace",
+			blockType: BlockType.COMMAND,
 			arguments: {
 				MODE: {
 					type: ArgumentType.NUMBER,
@@ -1336,15 +1608,11 @@ framebufferTextureLayer*/
 					defaultValue: gl.CCW
 				},
 			},
-			def: function({MODE}) {
-				gl.frontFace(MODE);
-			}
 		},
 		{
-			opcode: "generateMipmap",
+			glfn: "generateMipmap",
 			category: Category.TEXTURES,
 			blockType: BlockType.COMMAND,
-			text: "gl.generateMipmap [TARGET]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -1352,140 +1620,295 @@ framebufferTextureLayer*/
 					defaultValue: gl.TEXTURE_2D
 				},
 			},
-			def: function({TARGET}) {
-				gl.generateMipmap(TARGET);
-			}
 		},
-/*getActiveAttrib
-getActiveUniform
-getActiveUniformBlockName
-getActiveUniformBlockParameter
-getActiveUniforms*/
 		{
-			opcode: "getAttachedShaders",
+			glfn: "getActiveAttrib",
 			category: Category.PROGRAMS,
-			blockType: BlockType.COMMAND,
-			text: "gl.getAttachedShaders [PROGRAM] [OUTPUT]",
+			blockType: BlockType.REPORTER,
 			arguments: {
 				PROGRAM: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLProgram
 				},
-				OUTPUT: {
-					type: ArgumentType.STRING,
-					menu: "lists",
-					defaultValue: ""
-				}
+				INDEX: {
+					type: ArgumentType.NUMBER
+				},
+				PROP: {
+					type: ArgumentType.PROPERTY,
+					menu: "activeInfo",
+					defaultValue: "name"
+				},
 			},
-			def: function({PROGRAM, OUTPUT}, {target}) {
-				let program = objectStorage.get(num(PROGRAM));
-				if(!program || program[1] !== "program") return;
-				let shaders = gl.getAttachedShaders(program[0]);
-				let keys = [];
-				objectStorage.forEach((value, key) => {
-					if(value[1] === "shader" && shaders.indexOf(value[0]) > -1) keys.push(key)
-				});
-				const list = target.lookupVariableByNameAndType(OUTPUT, "list");
-				if(!list) return;
-				list.value = keys;
-			}
 		},
 		{
-			opcode: "getAttribLocation",
+			glfn: "getActiveUniform",
+			category: Category.UNIFORMS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				PROGRAM: {
+					type: ArgumentType.WebGLProgram
+				},
+				INDEX: {
+					type: ArgumentType.NUMBER
+				},
+				PROP: {
+					type: ArgumentType.PROPERTY,
+					menu: "activeInfo",
+					defaultValue: "name"
+				},
+			},
+		},
+		{
+			glfn: "getActiveUniformBlockName",
+			category: Category.UNIFORMS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				PROGRAM: {
+					type: ArgumentType.WebGLProgram
+				},
+				INDEX: {
+					type: ArgumentType.NUMBER
+				},
+			},
+		},
+		{
+			glfn: "getActiveUniformBlockParameter",
+			category: Category.UNIFORMS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				PROGRAM: {
+					type: ArgumentType.WebGLProgram
+				},
+				INDEX: {
+					type: ArgumentType.NUMBER
+				},
+				PNAME: {
+					type: ArgumentType.NUMBER,
+					menu: "uniformBlockParam",
+					defaultValue: gl.UNIFORM_BLOCK_BINDING
+				},
+			},
+		},
+		{
+			glfn: "getActiveUniforms",
+			category: Category.UNIFORMS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				PROGRAM: {
+					type: ArgumentType.WebGLProgram
+				},
+				INDICIES: {
+					type: ArgumentType.LIST,
+				},
+				PNAME: {
+					type: ArgumentType.NUMBER,
+					menu: "activeUniformsPname",
+					defaultValue: gl.UNIFORM_TYPE
+				},
+			},
+		},
+		{
+			glfn: "getAttachedShaders",
+			category: Category.PROGRAMS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				PROGRAM: {
+					type: ArgumentType.WebGLProgram
+				},
+			},
+			mapObjectsToIds: true,
+		},
+		{
+			glfn: "getAttribLocation",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.REPORTER,
-			text: "gl.getAttribLocation [PROGRAM] [NAME]",
 			arguments: {
 				PROGRAM: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLProgram
 				},
 				NAME: {
 					type: ArgumentType.STRING,
 					defaultValue: "a_position"
 				},
 			},
-			def: function({PROGRAM, NAME}) {
-				let program = objectStorage.get(num(PROGRAM));
-				if(!program || program[1] !== "program") return;
-				return gl.getAttribLocation(program[0], str(NAME));
-			}
 		},
-/*getBufferParameter
-getBufferSubData
-getContextAttributes*/
 		{
-			opcode: "getError",
+			glfn: "getBufferParameter",
+			category: Category.BUFFERS,
 			blockType: BlockType.REPORTER,
-			text: "gl.getError",
-			disableMonitor: true,
-			def: function() {
-				return gl.getError();
-			}
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferTarget",
+					defaultValue: gl.ARRAY_BUFFER
+				},
+				PNAME: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferParam",
+					defaultValue: gl.BUFFER_SIZE
+				},
+			},
+		},
+		{
+			opcode: "getBufferSubData",
+			blockType: BlockType.COMMAND,
+			category: Category.BUFFERS,
+			text: "gl.getBufferSubData [TARGET] [SRCBYTEOFFSET] [ARRAYTYPE] [DSTDATA] [DSTOFFSET] [LENGTH]",
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferTarget",
+				},
+				SRCBYTEOFFSET: {
+					type: ArgumentType.NUMBER,
+				},
+				ARRAYTYPE: {
+					type: ArgumentType.STRING,
+					menu: "typedArrays",
+					defaultValue: "Float32Array"
+				},
+				DSTDATA: {
+					type: ArgumentType.STRING,
+					menu: "lists"
+				},
+				DSTOFFSET: {
+					type: ArgumentType.NUMBER,
+				},
+				LENGTH: {
+					type: ArgumentType.NUMBER,
+				},
+			},
+			def: function({TARGET, SRCBYTEOFFSET, ARRAYTYPE, DSTDATA, DSTOFFSET, LENGTH}, {target}) {
+				DSTDATA = target.lookupVariableByNameAndType(DSTDATA, "list");
+				if (!DSTDATA) return;
+				const dest = DSTDATA.value;
+				const src = new (TypedArrays[ARRAYTYPE])(LENGTH);
+				gl.getBufferSubData(num(TARGET), num(SRCBYTEOFFSET), src);
+				copyArrayInto(src, dest, num(DSTOFFSET), num(LENGTH));
+				DSTDATA._monitorUpToDate = false;
+			},
+		},
+		{
+			glfn: "getContextAttributes",
+			blockType: BlockType.REPORTER,
+			arguments: {
+				PARAM: {
+					type: ArgumentType.PROPERTY,
+					menu: "contextAttributes",
+				},
+			},
+		},
+		{
+			glfn: "getError",
+			blockType: BlockType.REPORTER,
 		},
 /*
 !!!!!getExtension*/
 		{
-			opcode: "getFragDataLocation",
+			glfn: "getFragDataLocation",
 			blockType: BlockType.REPORTER,
-			text: "gl.getFragDataLocation [PROGRAM] [NAME]",
 			arguments: {
 				PROGRAM: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLProgram
 				},
 				NAME: {
 					type: ArgumentType.STRING
 				},
 			},
-			def: function({PROGRAM, NAME}) {
-				let program = objectStorage.get(num(PROGRAM));
-				if(!program || program[1] !== "program") return;
-				return gl.getFragDataLocation(program[0], NAME);
-			}
 		},
-/*getFramebufferAttachmentParameter
-getIndexedParameter
-getInternalformatParameter
-getParameter*/
 		{
-			opcode: "getProgramInfoLog",
-			category: Category.PROGRAMS,
+			glfn: "getFramebufferAttachmentParameter",
+			category: Category.FRAMEBUFFERS,
 			blockType: BlockType.REPORTER,
-			text: "gl.getProgramInfoLog [PROGRAM]",
 			arguments: {
-				PROGRAM: {
-					type: ArgumentType.EMPTY
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "framebufferTarget",
+					defaultValue: gl.FRAMEBUFFER
+				},
+				ATTACHMENT: {
+					type: ArgumentType.NUMBER,
+					menu: "attachment",
+					defaultValue: gl.COLOR_ATTACHMENT0
+				},
+				PNAME: {
+					type: ArgumentType.NUMBER,
+					menu: "framebufferAttachmentParam",
+					defaultValue: gl.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE
 				},
 			},
-			def: function({PROGRAM}) {
-				let program = objectStorage.get(num(PROGRAM));
-				if(!program || program[1] !== "program") return;
-				return gl.getProgramInfoLog(program[0]);
-			}
 		},
 		{
-			opcode: "getProgramParameter",
+			glfn: "getIndexedParameter",
+			category: Category.BUFFERS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "indexedTarget",
+				},
+				INDEX: {
+					type: ArgumentType.NUMBER,
+				},
+			},
+		},
+		{
+			glfn: "getInternalformatParameter",
+			category: Category.RENDERBUFFERS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "renderbufferTarget",
+				},
+				INTERNALFORMAT: {
+					type: ArgumentType.NUMBER,
+					menu: "internalFormatRenderable"
+				},
+				PNAME: {
+					type: ArgumentType.NUMBER,
+					menu: "internalFormatParam"
+				},
+			},
+		},
+		{
+			glfn: "getParameter",
+			blockType: BlockType.REPORTER,
+			arguments: {
+				PNAME: {
+					type: ArgumentType.NUMBER,
+					menu: "parameter",
+					defaultValue: gl.ACTIVE_TEXTURE
+				},
+			},
+		},
+		{
+			glfn: "getProgramInfoLog",
 			category: Category.PROGRAMS,
 			blockType: BlockType.REPORTER,
-			text: "gl.getProgramParameter [PROGRAM] [PARAM]",
 			arguments: {
 				PROGRAM: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLProgram
+				},
+			},
+		},
+		{
+			glfn: "getProgramParameter",
+			category: Category.PROGRAMS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				PROGRAM: {
+					type: ArgumentType.WebGLProgram
 				},
 				PARAM: {
 					type: ArgumentType.NUMBER,
 					menu: "programParameter"
 				},
 			},
-			def: function({PROGRAM, PARAM}) {
-				let program = objectStorage.get(num(PROGRAM));
-				if(!program || program[1] !== "program") return;
-				return gl.getProgramParameter(program[0], PARAM);
-			}
 		},
 		{
-			opcode: "getQuery",
+			glfn: "getQuery",
 			category: Category.QUERIES,
 			blockType: BlockType.REPORTER,
-			text: "gl.getQuery [TARGET] [PNAME]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -1498,20 +1921,14 @@ getParameter*/
 					defaultValue: gl.CURRENT_QUERY
 				},
 			},
-			def: function({TARGET, PNAME}) {
-				let qu = gl.getQuery(TARGET, PNAME);
-				if(!qu) return "";
-				return objectStorageInv.get(qu);
-			}
 		},
 		{
-			opcode: "getQueryParameter",
+			glfn: "getQueryParameter",
 			category: Category.QUERIES,
 			blockType: BlockType.REPORTER,
-			text: "gl.getQueryParameter [QUERY] [PNAME]",
 			arguments: {
 				QUERY: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLQuery,
 				},
 				PNAME: {
 					type: ArgumentType.NUMBER,
@@ -1519,56 +1936,67 @@ getParameter*/
 					defaultValue: gl.QUERY_RESULT
 				},
 			},
-			def: function({QUERY, PNAME}) {
-				let query = objectStorage.get(QUERY);
-				if(!query || query[1] !== "query") return;
-				return gl.getQueryParameter(query[0], PNAME);
-			}
 		},
-/*
-getRenderbufferParameter
-getSamplerParameter*/
 		{
-			opcode: "getShaderInfoLog",
-			category: Category.SHADERS,
+			glfn: "getRenderbufferParameter",
+			category: Category.RENDERBUFFERS,
 			blockType: BlockType.REPORTER,
-			text: "gl.getShaderInfoLog [SHADER]",
 			arguments: {
-				SHADER: {
-					type: ArgumentType.EMPTY
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "renderbufferTarget",
+					defaultValue: gl.RENDERBUFFER
+				},
+				PNAME: {
+					type: ArgumentType.NUMBER,
+					menu: "renderbufferParam",
+					defaultValue: gl.RENDERBUFFER_WIDTH
 				},
 			},
-			def: function({SHADER}) {
-				let shader = objectStorage.get(num(SHADER));
-				if(!shader || shader[1] !== "shader") return;
-				return gl.getShaderInfoLog(shader[0]);
-			}
 		},
 		{
-			opcode: "getShaderParameter",
+			glfn: "getSamplerParameter",
+			category: Category.SAMPLERS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				SAMPLER: {
+					type: ArgumentType.WebGLSampler
+				},
+				PARAM: {
+					type: ArgumentType.NUMBER,
+					menu: "samplerParam",
+					defaultValue: gl.TEXTURE_COMPARE_FUNC
+				},
+			},
+		},
+		{
+			glfn: "getShaderInfoLog",
 			category: Category.SHADERS,
 			blockType: BlockType.REPORTER,
-			text: "gl.getShaderParameter [SHADER] [PARAM]",
 			arguments: {
 				SHADER: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLShader
+				},
+			},
+		},
+		{
+			glfn: "getShaderParameter",
+			category: Category.SHADERS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				SHADER: {
+					type: ArgumentType.WebGLShader
 				},
 				PARAM: {
 					type: ArgumentType.NUMBER,
 					menu: "shaderParameter"
 				},
 			},
-			def: function({SHADER, PARAM}) {
-				let shader = objectStorage.get(num(SHADER));
-				if(!shader || shader[1] !== "shader") return;
-				return gl.getShaderParameter(shader[0], PARAM);
-			}
 		},
 		{
-			opcode: "getShaderPrecisionFormat",
+			glfn: "getShaderPrecisionFormat",
 			category: Category.SHADERS,
 			blockType: BlockType.REPORTER,
-			text: "gl.getShaderPrecisionFormat [SHADERTYPE] [PRECTYPE] . [COMPONENT]",
 			arguments: {
 				SHADERTYPE: {
 					type: ArgumentType.NUMBER,
@@ -1579,44 +2007,29 @@ getSamplerParameter*/
 					menu: "shaderPrecisionType"
 				},
 				COMPONENT: {
-					type: ArgumentType.STRING,
+					type: ArgumentType.PROPERTY,
 					menu: "shaderPrecisionComponent"
 				},
 			},
-			def: function({SHADERTYPE, PRECTYPE, COMPONENT}) {
-				let data = gl.getShaderPrecisionFormat(SHADERTYPE, PRECTYPE);
-				if(!data) return "";
-				if(COMPONENT == "rangeMin") return data.rangeMin;
-				if(COMPONENT == "rangeMax") return data.rangeMax;
-				if(COMPONENT == "precision") return data.precision;
-				return "";
-			}
 		},
 		{
-			opcode: "getShaderSource",
+			glfn: "getShaderSource",
 			category: Category.SHADERS,
 			blockType: BlockType.REPORTER,
-			text: "gl.getShaderSource [SHADER]",
 			arguments: {
 				SHADER: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLShader
 				},
 			},
-			def: function({SHADER}) {
-				let shader = objectStorage.get(num(SHADER));
-				if(!shader || shader[1] !== "shader") return;
-				return gl.getShaderSource(shader[0]);
-			}
 		},
 /*!!!!!getSupportedExtensions*/
 		{
-			opcode: "getSyncParameter",
+			glfn: "getSyncParameter",
 			category: Category.SYNC,
 			blockType: BlockType.REPORTER,
-			text: "gl.getSyncParameter [SYNC] [PARAM]",
 			arguments: {
 				SYNC: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLSync
 				},
 				PARAM: {
 					type: ArgumentType.NUMBER,
@@ -1624,43 +2037,81 @@ getSamplerParameter*/
 					defaultValue: gl.SYNC_STATUS
 				},
 			},
-			def: function({SYNC, PARAM}) {
-				let sync = objectStorage.get(num(SYNC));
-				if(!sync || sync[1] !== "sync") return;
-				return gl.getSyncParameter(sync[0], PARAM);
-			}
 		},
-/*
-getTexParameter*/
-
 		{
-			opcode: "getTransformFeedbackVarying",
+			glfn: "getTexParameter",
+			category: Category.TEXTURES,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "textureTarget",
+					defaultValue: gl.TEXTURE_2D
+				},
+				PARAM: {
+					type: ArgumentType.NUMBER,
+					menu: "textureParameter",
+					defaultValue: gl.TEXTURE_MAG_FILTER
+				},
+			},
+		},
+		{
+			glfn: "getTransformFeedbackVarying",
 			category: Category.PROGRAMS,
 			blockType: BlockType.REPORTER,
-			text: "gl.getTransformFeedbackVarying [PROGRAM] [INDEX].[PROP]",
 			arguments: {
 				PROGRAM: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLProgram
 				},
 				INDEX: {
 					type: ArgumentType.NUMBER,
 				},
 				PROP: {
-					type: ArgumentType.STRING,
+					type: ArgumentType.PROPERTY,
 					menu: "activeInfo",
 					defaultValue: "name"
 				}
 			},
-			def: function({PROGRAM, INDEX, PROP}) {
-				let program = objectStorage.get(PROGRAM);
-				if(!program || program[1] !== "program") return;
-				return gl.getTransformFeedbackVarying(program[0], INDEX)[PROP] || "";
-			}
 		},
-/*getUniform
-getUniformBlockIndex
-getUniformIndices*/
-
+		{
+			glfn: "getUniform",
+			category: Category.UNIFORMS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				PROGRAM: {
+					type: ArgumentType.WebGLProgram
+				},
+				LOCATION: {
+					type: ArgumentType.WebGLUniformLocation,
+				}
+			},
+		},
+		{
+			glfn: "getUniformBlockIndex",
+			category: Category.UNIFORMS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				PROGRAM: {
+					type: ArgumentType.WebGLProgram
+				},
+				UNIFORMNAME: {
+					type: ArgumentType.STRING,
+				}
+			},
+		},
+		{
+			glfn: "getUniformIndices",
+			category: Category.UNIFORMS,
+			blockType: BlockType.REPORTER,
+			arguments: {
+				PROGRAM: {
+					type: ArgumentType.WebGLProgram
+				},
+				UNIFORMNAMES: {
+					type: ArgumentType.LIST,
+				}
+			},
+		},
 		{
 			opcode: "getUniformLocation",
 			category: Category.UNIFORMS,
@@ -1676,20 +2127,44 @@ getUniformIndices*/
 				},
 			},
 			def: function({PROGRAM, NAME}) {
-				let program = objectStorage.get(num(PROGRAM));
-				if(!program || program[1] !== "program") return;
-				if(program[2].uniforms[str(NAME)]) return program[2].uniforms[str(NAME)];
-				let res = addToStorage(gl.getUniformLocation(program[0], str(NAME)), "uniform location");
-				if(res) program[2].uniforms[str(NAME)] = res;
+				let extra;
+				[PROGRAM, extra] = objectStorage.getTypedWithExtra(num(PROGRAM), "WebGLProgram");
+				let res = sanitizeOutput(gl.getUniformLocation(PROGRAM, str(NAME)));
+				if (res) extra.uniforms[str(NAME)] = res;
 				return res;
 			}
 		},
-/*getVertexAttrib
-getVertexAttribOffset*/
 		{
-			opcode: "hint",
+			glfn: "getVertexAttrib",
+			blockType: BlockType.REPORTER,
+			category: Category.ATTRIBUTES,
+			arguments: {
+				INDEX: {
+					type: ArgumentType.NUMBER,
+				},
+				PNAME: {
+					type: ArgumentType.NUMBER,
+					menu: "vertexParam",
+				},
+			},
+		},
+		{
+			glfn: "getVertexAttribOffset",
+			blockType: BlockType.REPORTER,
+			category: Category.ATTRIBUTES,
+			arguments: {
+				INDEX: {
+					type: ArgumentType.NUMBER,
+				},
+				PNAME: {
+					type: ArgumentType.NUMBER,
+					menu: "vertexParamOffset",
+				},
+			},
+		},
+		{
+			glfn: "hint",
 			blockType: BlockType.COMMAND,
-			text: "gl.hint [TARGET] [MODE]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -1702,46 +2177,32 @@ getVertexAttribOffset*/
 					defaultValue: gl.DONT_CARE
 				},
 			},
-			def: function({TARGET, MODE}) {
-				gl.hint(TARGET, MODE);
-			}
 		},
 		{
-			opcode: "invalidateFramebuffer",
+			glfn: "invalidateFramebuffer",
 			blockType: BlockType.COMMAND,
-			text: "gl.invalidateFramebuffer [TARGET] [ATTACHMENTS]",
+			category: Category.FRAMEBUFFERS,
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
 					menu: "framebufferTarget",
-					defaultValue: gl.FRAGMENT_SHADER_DERIVATIVE_HINT
 				},
 				ATTACHMENTS: {
-					type: ArgumentType.STRING,
-					menu: "lists",
-					defaultValue: ""
+					type: ArgumentType.LIST,
 				},
 			},
-			def: function({TARGET, ATTACHMENTS}, {target}) {
-				const list = target.lookupVariableByNameAndType(ATTACHMENTS, "list");
-				if(!list) return;
-				gl.invalidateFramebuffer(TARGET, list.value);
-			}
 		},
 		{
-			opcode: "invalidateSubFramebuffer",
+			glfn: "invalidateSubFramebuffer",
 			blockType: BlockType.COMMAND,
-			text: "gl.invalidateSubFramebuffer [TARGET] [ATTACHMENTS] [X] [Y] [WIDTH] [HEIGHT]",
+			category: Category.FRAMEBUFFERS,
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
 					menu: "framebufferTarget",
-					defaultValue: gl.FRAGMENT_SHADER_DERIVATIVE_HINT
 				},
 				ATTACHMENTS: {
-					type: ArgumentType.STRING,
-					menu: "lists",
-					defaultValue: ""
+					type: ArgumentType.LIST,
 				},
 				X: {
 					type: ArgumentType.NUMBER
@@ -1756,90 +2217,160 @@ getVertexAttribOffset*/
 					type: ArgumentType.NUMBER
 				}
 			},
-			def: function({TARGET, ATTACHMENTS, X, Y, WIDTH, HEIGHT}, {target}) {
-				const list = target.lookupVariableByNameAndType(ATTACHMENTS, "list");
-				if(!list) return;
-				gl.invalidateSubFramebuffer(TARGET, list.value, X, Y, WIDTH, HEIGHT);
-			}
-		},
-/*
-isBuffer*/
-		{
-			opcode: "isContextLost",
-			blockType: BlockType.BOOLEAN,
-			text: "gl.isContextLost",
-			def: function() {
-				return gl.isContextLost();
-			}
 		},
 		{
-			opcode: "isEnabled",
+			glfn: "isBuffer",
 			blockType: BlockType.BOOLEAN,
-			text: "gl.isEnabled [CAPABILITY]",
+			category: Category.BUFFERS,
+			arguments: {
+				BUFFER: {
+					type: ArgumentType.WebGLBuffer,
+				},
+			},
+		},
+		{
+			glfn: "isContextLost",
+			blockType: BlockType.BOOLEAN,
+		},
+		{
+			glfn: "isEnabled",
+			blockType: BlockType.BOOLEAN,
 			arguments: {
 				CAPABILITY: {
 					type: ArgumentType.NUMBER,
 					menu: "capability"
 				},
 			},
-			def: function({CAPABILITY}) {
-				return gl.isEnabled(CAPABILITY);
-			}
 		},
-/*isFramebuffer
-isProgram
-isQuery
-isRenderbuffer
-isSampler
-isShader
-isSync
-isTexture
-isTransformFeedback
-isVertexArray*/
 		{
-			opcode: "lineWidth",
+			glfn: "isFramebuffer",
+			blockType: BlockType.BOOLEAN,
+			category: Category.FRAMEBUFFERS,
+			arguments: {
+				FRAMEBUFFER: {
+					type: ArgumentType.WebGLFramebuffer,
+				},
+			},
+		},
+		{
+			glfn: "isProgram",
+			blockType: BlockType.BOOLEAN,
+			category: Category.PROGRAMS,
+			arguments: {
+				PROGRAM: {
+					type: ArgumentType.WebGLProgram,
+				},
+			},
+		},
+		{
+			glfn: "isQuery",
+			blockType: BlockType.BOOLEAN,
+			category: Category.QUERIES,
+			arguments: {
+				QUERY: {
+					type: ArgumentType.WebGLQuery,
+				},
+			},
+		},
+		{
+			glfn: "isRenderbuffer",
+			blockType: BlockType.BOOLEAN,
+			category: Category.RENDERBUFFERS,
+			arguments: {
+				RENDERBUFFER: {
+					type: ArgumentType.WebGLRenderbuffer,
+				},
+			},
+		},
+		{
+			glfn: "isSampler",
+			blockType: BlockType.BOOLEAN,
+			category: Category.SAMPLERS,
+			arguments: {
+				SAMPLER: {
+					type: ArgumentType.WebGLSampler,
+				},
+			},
+		},
+		{
+			glfn: "isShader",
+			blockType: BlockType.BOOLEAN,
+			category: Category.SHADERS,
+			arguments: {
+				SHADER: {
+					type: ArgumentType.WebGLShader,
+				},
+			},
+		},
+		{
+			glfn: "isSync",
+			blockType: BlockType.BOOLEAN,
+			category: Category.SYNC,
+			arguments: {
+				SYNCS: {
+					type: ArgumentType.WebGLSync,
+				},
+			},
+		},
+		{
+			glfn: "isTexture",
+			blockType: BlockType.BOOLEAN,
+			category: Category.TEXTURES,
+			arguments: {
+				TEXTURES: {
+					type: ArgumentType.WebGLTexture,
+				},
+			},
+		},
+		{
+			glfn: "isTransformFeedback",
+			blockType: BlockType.BOOLEAN,
+			category: Category.TRANSFORMFEEDBACK,
+			arguments: {
+				TRANSFORMFEEDBACK: {
+					type: ArgumentType.WebGLTransformFeedback,
+				},
+			},
+		},
+		{
+			glfn: "isVertexArray",
+			blockType: BlockType.BOOLEAN,
+			category: Category.VAO,
+			arguments: {
+				VERTEXARRAY: {
+					type: ArgumentType.WebGLVertexArrayObject,
+				},
+			},
+		},
+		{
+			glfn: "lineWidth",
 			blockType: BlockType.COMMAND,
-			text: "gl.lineWidth [WIDTH]",
 			arguments: {
 				WIDTH: {
 					type: ArgumentType.NUMBER,
 					defaultValue: 1
 				},
 			},
-			def: function({WIDTH}) {
-				gl.lineWidth(WIDTH);
-			}
 		},
 		{
-			opcode: "linkProgram",
+			glfn: "linkProgram",
 			category: Category.PROGRAMS,
 			blockType: BlockType.COMMAND,
-			text: "gl.linkProgram [PROGRAM]",
 			arguments: {
 				PROGRAM: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLProgram
 				},
 			},
-			def: function({PROGRAM}) {
-				let program = objectStorage.get(num(PROGRAM));
-				if(!program || program[1] !== "program") return;
-				gl.linkProgram(program[0]);
-			}
 		},
 		{
-			opcode: "pauseTransformFeedback",
+			glfn: "pauseTransformFeedback",
 			category: Category.TRANSFORMFEEDBACK,
 			blockType: BlockType.COMMAND,
-			text: "gl.pauseTransformFeedback",
-			def: function() {
-				gl.pauseTransformFeedback();
-			}
 		},
 		{
-			opcode: "pixelStorei",
+			glfn: "pixelStorei",
 			category: Category.TEXTURES,
 			blockType: BlockType.COMMAND,
-			text: "gl.pixelStorei [PNAME] [PARAM]",
 			arguments: {
 				PNAME: {
 					type: ArgumentType.NUMBER,
@@ -1850,14 +2381,10 @@ isVertexArray*/
 					type: ArgumentType.NUMBER
 				}
 			},
-			def: function({PNAME, PARAM}) {
-				gl.pixelStorei(PNAME, PARAM);
-			}
 		},
 		{
-			opcode: "polygonOffset",
+			glfn: "polygonOffset",
 			blockType: BlockType.COMMAND,
-			text: "gl.polygonOffset [FACTOR] [UNITS]",
 			arguments: {
 				FACTOR: {
 					type: ArgumentType.NUMBER
@@ -1866,28 +2393,126 @@ isVertexArray*/
 					type: ArgumentType.NUMBER
 				},
 			},
-			def: function({FACTOR, UNITS}) {
-				gl.polygonOffset(FACTOR, UNITS);
-			}
 		},
-
-/*readBuffer
-readPixels
-renderbufferStorage
-renderbufferStorageMultisample*/
 		{
-			opcode: "resumeTransformFeedback",
+			glfn: "readBuffer",
+			category: Category.FRAMEBUFFERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "readBuffer",
+					defaultValue: gl.BACK
+				}
+			},
+		},
+		{
+			opcode: "readPixels-1",
+			category: Category.FRAMEBUFFERS,
+			blockType: BlockType.COMMAND,
+			text: "gl.readPixels [X] [Y] [WIDTH] [HEIGHT] [FORMAT] [TYPE] [PIXELS] [DSTOFFSET]",
+			arguments: {
+				X: {
+					type: ArgumentType.NUMBER,
+				},
+				Y: {
+					type: ArgumentType.NUMBER,
+				},
+				WIDTH: {
+					type: ArgumentType.NUMBER,
+				},
+				HEIGHT: {
+					type: ArgumentType.NUMBER,
+				},
+				FORMAT: {
+					type: ArgumentType.NUMBER,
+					menu: "format2"
+				},
+				TYPE: {
+					type: ArgumentType.NUMBER,
+					menu: "textureDataType"
+				},
+				PIXELS: {
+					type: ArgumentType.STRING,
+					menu: "lists"
+				},
+				DSTOFFSET: {
+					type: ArgumentType.NUMBER,
+				},
+			},
+			def: function({X, Y, WIDTH, HEIGHT, FORMAT, TYPE, PIXELS, DSTOFFSET}, {target}) {
+				PIXELS = target.lookupVariableByNameAndType(PIXELS, "list");
+				if (!PIXELS) return;
+				const dest = PIXELS.value;
+				const length = WIDTH * HEIGHT * GlFormatChannels[FORMAT] / GlTypeFitsChannels[TYPE];
+				const src = new (GlTypeToTypedArray[TYPE])(length);
+				gl.getReadPixels(num(X), num(Y), num(WIDTH), num(HEIGHT), num(FORMAT), num(TYPE), src, num(DSTOFFSET));
+				copyArrayInto(src, dest, num(DSTOFFSET), length);
+				PIXELS._monitorUpToDate = false;
+			},
+		},
+		{
+			glfn: "renderbufferStorage",
+			category: Category.RENDERBUFFERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "renderbufferTarget",
+					defaultValue: gl.RENDERBUFFER
+				},
+				INTERNALFORMAT: {
+					type: ArgumentType.NUMBER,
+					menu: "internalFormat",
+					defaultValue: gl.RGBA
+				},
+				WIDTH: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 10
+				},
+				HEIGHT: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 10
+				}
+			},
+		},
+		{
+			glfn: "renderbufferStorageMultisample",
+			category: Category.RENDERBUFFERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "renderbufferTarget",
+					defaultValue: gl.RENDERBUFFER
+				},
+				SAMPLES: {
+					type: ArgumentType.NUMBER,
+					defaultValue: gl.getParameter(gl.MAX_SAMPLES)
+				},
+				INTERNALFORMAT: {
+					type: ArgumentType.NUMBER,
+					menu: "internalFormat",
+					defaultValue: gl.RGBA
+				},
+				WIDTH: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 10
+				},
+				HEIGHT: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 10
+				}
+			},
+		},
+		{
+			glfn: "resumeTransformFeedback",
 			category: Category.TRANSFORMFEEDBACK,
 			blockType: BlockType.COMMAND,
-			text: "gl.resumeTransformFeedback",
-			def: function() {
-				gl.resumeTransformFeedback();
-			}
 		},
 		{
-			opcode: "sampleCoverage",
+			glfn: "sampleCoverage",
 			blockType: BlockType.COMMAND,
-			text: "gl.sampleCoverage [VALUE] [INVERT]",
 			arguments: {
 				VALUE: {
 					type: ArgumentType.NUMBER
@@ -1896,40 +2521,61 @@ renderbufferStorageMultisample*/
 					type: ArgumentType.BOOLEAN
 				},
 			},
-			def: function({VALUE, INVERT}) {
-				gl.sampleCoverage(VALUE, INVERT);
-			}
 		},
-/*samplerParameterf
-samplerParameteri*/
 		{
-			opcode: "shaderSource",
+			glfn: "samplerParameterf",
+			category: Category.SAMPLERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				SAMPLER: {
+					type: ArgumentType.WebGLSampler
+				},
+				PNAME: {
+					type: ArgumentType.NUMBER,
+					menu: "samplerParameterf",
+					defaultValue: gl.TEXTURE_MAX_LOD
+				},
+				PARAM: {
+					type: ArgumentType.NUMBER
+				}
+			},
+		},
+		{
+			glfn: "samplerParameteri",
+			category: Category.SAMPLERS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				SAMPLER: {
+					type: ArgumentType.WebGLSampler
+				},
+				PNAME: {
+					type: ArgumentType.NUMBER,
+					menu: "samplerParameteri",
+					defaultValue: gl.TEXTURE_COMPARE_FUNC
+				},
+				PARAM: {
+					type: ArgumentType.NUMBER
+				}
+			},
+		},
+		{
+			glfn: "shaderSource",
 			category: Category.SHADERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.shaderSource [SHADER] [SOURCE]",
 			arguments: {
 				SHADER: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLShader
 				},
 				SOURCE: {
-					type: ArgumentType.STRING,
-					menu: "lists",
-					defaultValue: ""
+					type: ArgumentType.LIST,
+					join: "\n"
 				},
 			},
-			def: function({SHADER, SOURCE},{target}) {
-				const list = target.lookupVariableByNameAndType(SOURCE, "list")
-				if(!list) return;
-				let shader = objectStorage.get(num(SHADER));
-				if(!shader || shader[1] !== "shader") return;
-				gl.shaderSource(shader[0], list.value.join("\n"));
-			}
 		},
 		{
-			opcode: "stencilFunc",
+			glfn: "stencilFunc",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.stencilFunc [FUNC] [REF] [FLAG]",
 			arguments: {
 				FUNC: {
 					type: ArgumentType.NUMBER,
@@ -1937,22 +2583,17 @@ samplerParameteri*/
 				},
 				REF: {
 					type: ArgumentType.NUMBER,
-					defaultValue: 0
 				},
 				FLAG: {
 					type: ArgumentType.NUMBER,
 					defaultValue: 1
 				}
 			},
-			def: function({FUNC, REF, FLAG}) {
-				gl.stencilFunc(FUNC, REF, FLAG);
-			}
 		},
 		{
-			opcode: "stencilFuncSeparate",
+			glfn: "stencilFuncSeparate",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.stencilFuncSeparate [FACE] [FUNC] [REF] [FLAG]",
 			arguments: {
 				FACE: {
 					type: ArgumentType.NUMBER,
@@ -1964,37 +2605,28 @@ samplerParameteri*/
 				},
 				REF: {
 					type: ArgumentType.NUMBER,
-					defaultValue: 0
 				},
 				FLAG: {
 					type: ArgumentType.NUMBER,
 					defaultValue: 1
 				}
 			},
-			def: function({FACE, FUNC, REF, FLAG}) {
-				gl.stencilFuncSeparate(FACE, FUNC, REF, FLAG);
-			}
 		},
 		{
-			opcode: "stencilMask",
+			glfn: "stencilMask",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.stencilMask [MASK]",
 			arguments: {
 				MASK: {
 					type: ArgumentType.NUMBER,
 					defaultvalue: "0b11111111"
 				},
 			},
-			def: function({MASK}) {
-				gl.stencilMask(num(MASK));
-			}
 		},
 		{
-			opcode: "stencilMaskSeparate",
+			glfn: "stencilMaskSeparate",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.stencilMaskSeparate [FACE] [MASK]",
 			arguments: {
 				FACE: {
 					type: ArgumentType.NUMBER,
@@ -2005,15 +2637,11 @@ samplerParameteri*/
 					defaultvalue: "0b11111111"
 				},
 			},
-			def: function({FACE, MASK}) {
-				gl.stencilMaskSeparate(FACE, MASK);
-			}
 		},
 		{
-			opcode: "stencilOp",
+			glfn: "stencilOp",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.stencilOp [SFAIL] [ZFAIL] [PASS]",
 			arguments: {
 				SFAIL: {
 					type: ArgumentType.NUMBER,
@@ -2031,15 +2659,11 @@ samplerParameteri*/
 					defaultValue: gl.KEEP
 				},
 			},
-			def: function({SFAIL, ZFAIL, PASS}) {
-				gl.stencilOp(SFAIL, ZFAIL, PASS);
-			}
 		},
 		{
-			opcode: "stencilOpSeparate",
+			glfn: "stencilOpSeparate",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.stencilOpSeparate [SFAIL] [ZFAIL] [PASS]",
 			arguments: {
 				FACE: {
 					type: ArgumentType.NUMBER,
@@ -2061,15 +2685,11 @@ samplerParameteri*/
 					defaultValue: gl.KEEP
 				},
 			},
-			def: function({FACE, SFAIL, ZFAIL, PASS}) {
-				gl.stencilOp(FACE, SFAIL, ZFAIL, PASS);
-			}
 		},
 		{
-			opcode: "texImage2D1",
+			glfn: "texImage2D-1",
 			category: Category.TEXTURES,
 			blockType: BlockType.COMMAND,
-			text: "gl.texImage2D [TARGET] [LEVEL] [INTERNALFORMAT] [WIDTH] [HEIGHT] [BORDER] [FORMAT] [TYPE]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -2105,12 +2725,9 @@ samplerParameteri*/
 					defaultValue: gl.UNSIGNED_BYTE
 				},
 			},
-			def: function({TARGET, LEVEL, INTERNALFORMAT, WIDTH, HEIGHT, BORDER, FORMAT, TYPE}) {
-				gl.texImage2D(TARGET, LEVEL, INTERNALFORMAT, WIDTH, HEIGHT, BORDER, FORMAT, TYPE);
-			}
 		},
 		{
-			opcode: "texImage2D2",
+			opcode: "texImage2D-2",
 			category: Category.TEXTURES,
 			blockType: BlockType.COMMAND,
 			text: "gl.texImage2D [TARGET] [LEVEL] [INTERNALFORMAT] [COSTUME]",
@@ -2132,32 +2749,16 @@ samplerParameteri*/
 					menu: "costumes"
 				},
 			},
-			def: function({TARGET, LEVEL, INTERNALFORMAT, COSTUME},{target}) {
-				const costume = COSTUME.toLowerCase() === "current" ? target.getCurrentCostume() : target.getCostumes()[target.getCostumeIndexByName(COSTUME)];
-				if(!costume) return;
-				const skin = renderer._allSkins[costume.skinId];
-				if(!skin._textureSize) return; // Not bitmap
-				const texture = skin.getTexture();
-				const width = skin._textureSize[0];
-				const height = skin._textureSize[1];
-				const rgl = renderer.gl;
-				const fb = rgl.createFramebuffer();
-				rgl.bindFramebuffer(rgl.FRAMEBUFFER, fb);
-				rgl.framebufferTexture2D(rgl.FRAMEBUFFER, rgl.COLOR_ATTACHMENT0, rgl.TEXTURE_2D, texture, 0);
-				if(rgl.checkFramebufferStatus(rgl.FRAMEBUFFER) !== rgl.FRAMEBUFFER_COMPLETE) return;
-				const pixels = new Uint8Array(width * height * 4);
-				rgl.readPixels(0, 0, width, height, rgl.RGBA, rgl.UNSIGNED_BYTE, pixels);
-				console.log(pixels);
-				rgl.bindFramebuffer(rgl.FRAMEBUFFER, null);
-				rgl.deleteFramebuffer(fb);
-				gl.texImage2D(TARGET, LEVEL, INTERNALFORMAT, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+			def: function({TARGET, LEVEL, INTERNALFORMAT, COSTUME}, {target}) {
+				const {pixels, width, height} = getCostume(COSTUME, target);
+				if (pixels === null) return;
+				gl.texImage2D(num(TARGET), num(LEVEL), num(INTERNALFORMAT), width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 			}
 		},
 		{
-			opcode: "texImage2D4",
+			glfn: "texImage2D-4",
 			category: Category.TEXTURES,
 			blockType: BlockType.COMMAND,
-			text: "gl.texImage2D [TARGET] [LEVEL] [INTERNALFORMAT] [WIDTH] [HEIGHT] [BORDER] [FORMAT] [TYPE] [PBOOFFSET]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -2197,15 +2798,11 @@ samplerParameteri*/
 					defaultValue: 0
 				},
 			},
-			def: function({TARGET, LEVEL, INTERNALFORMAT, WIDTH, HEIGHT, BORDER, FORMAT, TYPE, PBOOFFSET},{target}) {
-				gl.texImage2D(TARGET, LEVEL, INTERNALFORMAT, WIDTH, HEIGHT, BORDER, FORMAT, TYPE, PBOOFFSET);
-			}
 		},
 		{
-			opcode: "texImage2D5",
+			glfn: "texImage2D-5",
 			category: Category.TEXTURES,
 			blockType: BlockType.COMMAND,
-			text: "gl.texImage2D [TARGET] [LEVEL] [INTERNALFORMAT] [WIDTH] [HEIGHT] [BORDER] [FORMAT] [TYPE] [ARRAY] [OFFSET]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -2241,42 +2838,49 @@ samplerParameteri*/
 					defaultValue: gl.UNSIGNED_BYTE
 				},
 				ARRAY: {
-					type: ArgumentType.STRING,
-					menu: "lists",
-					defaultValue: "my list"
+					type: ArgumentType.LIST,
+					typedArray: true,
+					typeSource: "TYPE",
+					typeLookup: "GlTypeToTypedArray"
 				},
 				OFFSET: {
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({TARGET, LEVEL, INTERNALFORMAT, WIDTH, HEIGHT, BORDER, FORMAT, TYPE, ARRAY, OFFSET},{target}) {
-				const list = target.lookupVariableByNameAndType(ARRAY, "list");
-				console.log("list", list, ARRAY);
-				if(!list) return;
-				let array = new (gl2typed[num(TYPE)])(list.value);
-				gl.texImage2D(num(TARGET), num(LEVEL), num(INTERNALFORMAT), num(WIDTH), num(HEIGHT), num(BORDER), num(FORMAT), num(TYPE), array, num(OFFSET));
-			}
 		},
-//texImage2D(target, level, internalformat, width, height, border, format, type);
-//texImage2D(target, level, internalformat, width, height, border, format, type, TexImageSource source);
-//texImage2D(target, level, internalformat,                        format, type, TexImageSource source); // May throw DOMException
-//texImage2D(target, level, internalformat, width, height, border, format, type, GLintptr pboOffset);
-//texImage2D(target, level, internalformat, width, height, border, format, type, ArrayBufferView srcData, srcOffset);
 
 //texImage2D(target, level, internalformat, width, height, border, format, type, ArrayBufferView? pixels);
 //texImage2D(target, level, internalformat,                        format, type, TexImageSource source); // May throw DOMException
 //texImage2D(target, level, internalformat, width, height, border, format, type, GLintptr pboOffset);
 //texImage2D(target, level, internalformat, width, height, border, format, type, TexImageSource source); // May throw DOMException
 //texImage2D(target, level, internalformat, width, height, border, format, type, ArrayBufferView srcData, srcOffset);
+// VVV
+//texImage2D(target, level, internalformat, width, height, border, format, type);
+//texImage2D(target, level, internalformat, width, height, border, format, type, TexImageSource source);
+//texImage2D(target, level, internalformat,                        format, type, TexImageSource source); // May throw DOMException
+//texImage2D(target, level, internalformat, width, height, border, format, type, GLintptr pboOffset);
+//texImage2D(target, level, internalformat, width, height, border, format, type, ArrayBufferView srcData, srcOffset);
 
+
+
+//texSubImage2D(target, level, xoffset, yoffset, width, height, format, type, ArrayBufferView? pixels);
+//texSubImage2D(target, level, xoffset, yoffset,                format, type, TexImageSource source); // May throw DOMException
+//texSubImage2D(target, level, xoffset, yoffset, width, height, format, type, GLintptr pboOffset);
+//texSubImage2D(target, level, xoffset, yoffset, width, height, format, type, TexImageSource source); // May throw DOMException
+//texSubImage2D(target, level, xoffset, yoffset, width, height, format, type, ArrayBufferView srcData, srcOffset);
+// VVV
+//texSubImage2D(target, level, xoffset, yoffset, width, height, format, type);
+//texSubImage2D(target, level, xoffset, yoffset, width, height, format, type, TexImageSource source); // May throw DOMException
+//texSubImage2D(target, level, xoffset, yoffset,                format, type, TexImageSource source); // May throw DOMException
+//texSubImage2D(target, level, xoffset, yoffset, width, height, format, type, GLintptr pboOffset);
+//texSubImage2D(target, level, xoffset, yoffset, width, height, format, type, ArrayBufferView srcData, srcOffset);
 /*
 texImage2D
 texImage3D*/
 		{
-			opcode: "texParameterf",
+			glfn: "texParameterf",
 			category: Category.TEXTURES,
 			blockType: BlockType.COMMAND,
-			text: "gl.texParameterf [TARGET] [PNAME] [PARAM]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -2293,15 +2897,11 @@ texImage3D*/
 					defaultValue: 0
 				}
 			},
-			def: function({TARGET,PNAME,PARAM}) {
-				gl.texParameterf(num(TARGET),num(PNAME),num(PARAM));
-			}
 		},
 		{
-			opcode: "texParameteri",
+			glfn: "texParameteri",
 			category: Category.TEXTURES,
 			blockType: BlockType.COMMAND,
-			text: "gl.texParameteri [TARGET] [PNAME] [PARAM]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
@@ -2315,31 +2915,69 @@ texImage3D*/
 				},
 				PARAM: {
 					type: ArgumentType.NUMBER,
-					defaultValue: 0
 				}
 			},
-			def: function({TARGET,PNAME,PARAM}) {
-				gl.texParameteri(num(TARGET),num(PNAME),num(PARAM));
-			}
 		},
-/*
-texStorage2D
-texStorage3D
-texSubImage2D
+		{
+			glfn: "texStorage2D",
+			category: Category.TEXTURES,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "textureTarget2D",
+				},
+				LEVELS: {
+					type: ArgumentType.NUMBER,
+				},
+				INTERNALFORMAT: {
+					type: ArgumentType.NUMBER,
+					menu: "internalFormat3",
+				},
+				WIDTH: {
+					type: ArgumentType.NUMBER,
+				},
+				HEIGHT: {
+					type: ArgumentType.NUMBER,
+				},
+			},
+		},
+		{
+			glfn: "texStorage3D",
+			category: Category.TEXTURES,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				TARGET: {
+					type: ArgumentType.NUMBER,
+					menu: "textureTarget3D",
+				},
+				LEVELS: {
+					type: ArgumentType.NUMBER,
+				},
+				INTERNALFORMAT: {
+					type: ArgumentType.NUMBER,
+					menu: "internalFormat3",
+				},
+				WIDTH: {
+					type: ArgumentType.NUMBER,
+				},
+				HEIGHT: {
+					type: ArgumentType.NUMBER,
+				},
+			},
+		},
+/*texSubImage2D
 texSubImage3D*/
 		{
-			opcode: "transformFeedbackVaryings",
+			glfn: "transformFeedbackVaryings",
 			category: Category.PROGRAMS,
 			blockType: BlockType.COMMAND,
-			text: "gl.transformFeedbackVaryings [PROGRAM] [VARYINGS] [BUFFERMODE]",
 			arguments: {
 				PROGRAM: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLProgram
 				},
 				VARYINGS: {
-					type: ArgumentType.STRING,
-					menu: "lists",
-					defaultValue: ""
+					type: ArgumentType.LIST,
 				},
 				BUFFERMODE: {
 					type: ArgumentType.STRING,
@@ -2347,58 +2985,89 @@ texSubImage3D*/
 					defaultValue: gl.SEPARATE_ATTRIBS
 				}
 			},
-			def: function({PROGRAM, VARYINGS, BUFFERMODE}) {
-				let program = objectStorage.get(PROGRAM);
-				if(!program || program[1] !== "program") return;
-
-				const list = target.lookupVariableByNameAndType(VARYINGS, "list");
-				if(!list) return;
-				gl.transformFeedbackVaryings(program[0], list, BUFFERMODE);
-			}
 		},
-/*uniformBlockBinding*/
 		{
-			opcode: "useProgram",
+			glfn: "uniformBlockBinding",
 			category: Category.PROGRAMS,
 			blockType: BlockType.COMMAND,
-			text: "gl.useProgram [PROGRAM]",
 			arguments: {
 				PROGRAM: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLProgram
 				},
+				INDEX: {
+					type: ArgumentType.NUMBER
+				},
+				BINDING: {
+					type: ArgumentType.NUMBER
+				}
 			},
-			def: function({PROGRAM}) {
-				let program = objectStorage.get(num(PROGRAM));
-				if(!program || program[1] !== "program") return;
-				gl.useProgram(program[0]);
-			}
 		},
 		{
-			opcode: "validateProgram",
+			glfn: "useProgram",
 			category: Category.PROGRAMS,
 			blockType: BlockType.COMMAND,
-			text: "gl.validateProgram [PROGRAM]",
 			arguments: {
 				PROGRAM: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLProgram
 				},
 			},
-			def: function({PROGRAM, SHADER}) {
-				const program = objectStorage.get(num(PROGRAM));
-				if(!program || program[1] !== "program") return;
-				gl.validateProgram(program[0]);
-			}
 		},
-/*vertexAttribDivisor
-vertexAttribIPointer*/
 		{
-			opcode: "waitSync",
+			glfn: "validateProgram",
+			category: Category.PROGRAMS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				PROGRAM: {
+					type: ArgumentType.WebGLProgram,
+				},
+			},
+		},
+		{
+			glfn: "vertexAttribDivisor",
+			category: Category.ATTRIBUTES,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				INDEX: {
+					type: ArgumentType.NUMBER
+				},
+				DIVISOR: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 1
+				}
+			},
+		},
+		{
+			glfn: "vertexAttribIPointer",
+			category: Category.ATTRIBUTES,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				LOCATION: {
+					type: ArgumentType.NUMBER,
+				},
+				SIZE: {
+					type: ArgumentType.NUMBER,
+					defaultvalue: 2
+				},
+				TYPE: {
+					type: ArgumentType.NUMBER,
+					menu: "dataTypeInt",
+					defaultValue: gl.SHORT
+				},
+				STRIDE: {
+					type: ArgumentType.NUMBER,
+				},
+				OFFSET: {
+					type: ArgumentType.NUMBER,
+				},
+			},
+		},
+		{
+			glfn: "waitSync",
 			category: Category.SYNC,
 			blockType: BlockType.REPORTER,
-			text: "gl.waitSync [SYNC] [FLAGS] [TIMEOUT]",
 			arguments: {
 				SYNC: {
-					type: ArgumentType.EMPTY
+					type: ArgumentType.WebGLSync
 				},
 				FLAGS: {
 					type: ArgumentType.NUMBER
@@ -2408,153 +3077,223 @@ vertexAttribIPointer*/
 					defaultValue: -1
 				},
 			},
-			def: function({SYNC, FLAGS, TIMEOUT}) {
-				let sync = objectStorage.get(num(SYNC));
-				if(!sync || sync[1] !== "sync") return;
-				return gl.waitSync(sync[0], num(FLAGS), num(TIMEOUT));
-			}
 		},
 		{
-			opcode: "bindBuffer",
+			glfn: "bindBuffer",
 			category: Category.BUFFERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.bindBuffer [TARGET] [BUFFER]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
 					menu: "bufferTarget"
 				},
 				BUFFER: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLBuffer,
 				},
 			},
-			def: function({TARGET, BUFFER}) {
-				let buffer = objectStorage.get(num(BUFFER));
-				if(!buffer || buffer[1] !== "buffer") return;
-				gl.bindBuffer(TARGET, buffer[0]);
-			}
 		},
 		{
-			opcode: "bindFramebuffer",
+			glfn: "bindFramebuffer",
 			category: Category.FRAMEBUFFERS,
 			blockType: BlockType.COMMAND,
-			text: "gl.bindFramebuffer [TARGET] [FRAMEBUFFER]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
 					menu: "framebufferTarget"
 				},
 				FRAMEBUFFER: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLFramebuffer,
 				},
 			},
-			def: function({TARGET, BUFFER}) {
-				let framebuffer = objectStorage.get(num(FRAMEBUFFER));
-				if(!framebuffer || framebuffer[1] !== "framebuffer") return;
-				gl.bindFramebuffer(TARGET, framebuffer[0]);
-			}
 		},
 		{
-			opcode: "bindTexture",
+			glfn: "bindTexture",
 			category: Category.TEXTURES,
 			blockType: BlockType.COMMAND,
-			text: "gl.bindTexture [TARGET] [TEXTURE]",
 			arguments: {
 				TARGET: {
 					type: ArgumentType.NUMBER,
 					menu: "textureTarget"
 				},
 				TEXTURE: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLTexture,
 				},
 			},
-			def: function({TARGET, TEXTURE}) {
-				let texture = objectStorage.get(num(TEXTURE));
-				if(!texture || texture[1] !== "texture") return;
-				gl.bindTexture(TARGET, texture[0]);
-			}
 		},
 		{
-			opcode: "clear",
+			glfn: "clear",
 			category: Category.RENDERING,
 			blockType: BlockType.COMMAND,
-			text: "gl.clear [BITS]",
+			needsRefresh: true,
 			arguments: {
 				BITS: {
 					type: ArgumentType.NUMBER,
-					menu: "clearBufferBits"
+					menu: "clearBufferBits",
 				},
 			},
-			def: function({BITS}) {
-				gl.clear(BITS);
-				renderer.dirty = true;   //TODO: only if canvas (framebuffer is null)
-				runtime.requestRedraw(); //TODO
-			}
 		},
-/*clearBufferfi
-clearBufferfv
-clearBufferiv
-clearBufferuiv*/
 		{
-			opcode: "clearColor",
+			glfn: "clearBufferfi",
+			category: Category.RENDERING,
+			blockType: BlockType.COMMAND,
+			needsRefresh: true,
+			arguments: {
+				BUFFER_TYPE: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferType",
+				},
+				BUFFER_INDEX: {
+					type: ArgumentType.NUMBER,
+				},
+				DEPTH: {
+					type: ArgumentType.NUMBER,
+					defaultValue: 1,
+				},
+				STENCIL: {
+					type: ArgumentType.NUMBER,
+				}
+			},
+		},
+		{
+			glfn: "clearBufferfv",
+			category: Category.RENDERING,
+			blockType: BlockType.COMMAND,
+			needsRefresh: true,
+			arguments: {
+				BUFFER_TYPE: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferType",
+				},
+				BUFFER_INDEX: {
+					type: ArgumentType.NUMBER,
+				},
+				COLOR: {
+					type: ArgumentType.VECTOR,
+					values: {
+						RED: {
+							type: ArgumentType.NUMBER,
+						},
+						GREEN: {
+							type: ArgumentType.NUMBER,
+						},
+						BLUE: {
+							type: ArgumentType.NUMBER,
+						},
+						ALPHA: {
+							type: ArgumentType.NUMBER,
+						},
+					}
+				},
+			},
+		},
+		{
+			glfn: "clearBufferiv",
+			category: Category.RENDERING,
+			blockType: BlockType.COMMAND,
+			needsRefresh: true,
+			arguments: {
+				BUFFER_TYPE: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferType",
+				},
+				BUFFER_INDEX: {
+					type: ArgumentType.NUMBER,
+				},
+				COLOR: {
+					type: ArgumentType.VECTOR,
+					values: {
+						RED: {
+							type: ArgumentType.NUMBER,
+						},
+						GREEN: {
+							type: ArgumentType.NUMBER,
+						},
+						BLUE: {
+							type: ArgumentType.NUMBER,
+						},
+						ALPHA: {
+							type: ArgumentType.NUMBER,
+						},
+					}
+				},
+			},
+		},
+		{
+			glfn: "clearBufferuiv",
+			category: Category.RENDERING,
+			blockType: BlockType.COMMAND,
+			needsRefresh: true,
+			arguments: {
+				BUFFER_TYPE: {
+					type: ArgumentType.NUMBER,
+					menu: "bufferType",
+				},
+				BUFFER_INDEX: {
+					type: ArgumentType.NUMBER,
+				},
+				COLOR: {
+					type: ArgumentType.VECTOR,
+					values: {
+						RED: {
+							type: ArgumentType.NUMBER,
+						},
+						GREEN: {
+							type: ArgumentType.NUMBER,
+						},
+						BLUE: {
+							type: ArgumentType.NUMBER,
+						},
+						ALPHA: {
+							type: ArgumentType.NUMBER,
+						},
+					}
+				},
+			},
+		},
+		{
+			glfn: "clearColor",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.clearColor [RED] [GREEN] [BLUE] [ALPHA]",
 			arguments: {
 				RED: {
 					type: ArgumentType.NUMBER,
-					defaultValue: 0,
 				},
 				GREEN: {
 					type: ArgumentType.NUMBER,
-					defaultValue: 0,
 				},
 				BLUE: {
 					type: ArgumentType.NUMBER,
-					defaultValue: 0,
 				},
 				ALPHA: {
 					type: ArgumentType.NUMBER,
 					defaultValue: 1,
 				},
 			},
-			def: function({RED, GREEN, BLUE, ALPHA}) {
-				gl.clearColor(num(RED), num(GREEN), num(BLUE), num(ALPHA));
-			}
 		},
 		{
-			opcode: "clearDepth",
+			glfn: "clearDepth",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.clearDepth [DEPTH]",
 			arguments: {
 				DEPTH: {
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({DEPTH}) {
-				gl.clearDepth(num(DEPTH));
-			}
 		},
 		{
-			opcode: "clearStencil",
+			glfn: "clearStencil",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.clearStencil [INDEX]",
 			arguments: {
 				INDEX: {
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({INDEX}) {
-				gl.clearStencil(num(INDEX));
-			}
 		},
 		{
-			opcode: "colorMask",
+			glfn: "colorMask",
 			category: Category.WRITEOPTIONS,
 			blockType: BlockType.COMMAND,
-			text: "gl.colorMask [RED] [GREEN] [BLUE] [ALPHA]",
 			arguments: {
 				RED: {
 					type: ArgumentType.BOOLEAN,
@@ -2569,29 +3308,22 @@ clearBufferuiv*/
 					type: ArgumentType.BOOLEAN,
 				},
 			},
-			def: function({RED, GREEN, BLUE, ALPHA}) {
-				gl.colorMask(bool(RED), bool(GREEN), bool(BLUE), bool(ALPHA));
-			}
 		},
 		{
-			opcode: "disableVertexAttribArray",
+			glfn: "disableVertexAttribArray",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.COMMAND,
-			text: "gl.disableVertexAttribArray [LOCATION]",
 			arguments: {
 				LOCATION: {
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({LOCATION}) {
-				gl.disableVertexAttribArray(num(LOCATION));
-			}
 		},
 		{
-			opcode: "drawArrays",
+			glfn: "drawArrays",
 			category: Category.RENDERING,
 			blockType: BlockType.COMMAND,
-			text: "gl.drawArrays [PRIMITIVE] [OFFSET] [COUNT]",
+			needsRefresh: true,
 			arguments: {
 				PRIMITIVE: {
 					type: ArgumentType.NUMBER,
@@ -2605,19 +3337,21 @@ clearBufferuiv*/
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({PRIMITIVE, OFFSET, COUNT}) {
-				gl.drawArrays(num(PRIMITIVE),num(OFFSET),num(COUNT));
-				renderer.dirty = true;   //TODO: only if canvas (framebuffer is null)
-				runtime.requestRedraw(); //TODO
-			}
 		},
-/* drawBuffers */
-/* HOW TO PASS LIST OF FEW SPECIFIC VALUES??? */
 		{
-			opcode: "drawElements",
+			glfn: "drawBuffers",
+			blockType: BlockType.COMMAND,
+			arguments: {
+				BUFFERS: {
+					type: ArgumentType.LIST,
+				},
+			},
+		},
+		{
+			glfn: "drawElements",
 			category: Category.RENDERING,
 			blockType: BlockType.COMMAND,
-			text: "gl.drawElements [PRIMITIVE] [COUNT] [TYPE] [OFFSET]",
+			needsRefresh: true,
 			arguments: {
 				PRIMITIVE: {
 					type: ArgumentType.NUMBER,
@@ -2634,32 +3368,22 @@ clearBufferuiv*/
 					type: ArgumentType.NUMBER,
 					menu: "unsignedInts",
 					defaultValue: gl.UNSIGNED_SHORT
-				}
+				},
 			},
-			def: function({PRIMITIVE, COUNT, TYPE, OFFSET}) {
-				gl.drawElements(num(PRIMITIVE),num(COUNT),num(TYPE),num(OFFSET));
-				renderer.dirty = true;   //TODO: only if canvas (framebuffer is null)
-				runtime.requestRedraw(); //TODO
-			}
 		},
 		{
-			opcode: "enableVertexAttribArray",
+			glfn: "enableVertexAttribArray",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.COMMAND,
-			text: "gl.enableVertexAttribArray [LOCATION]",
 			arguments: {
 				LOCATION: {
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({LOCATION}) {
-				gl.enableVertexAttribArray(num(LOCATION));
-			}
 		},
 		{
-			opcode: "scissor",
+			glfn: "scissor",
 			blockType: BlockType.COMMAND,
-			text: "gl.scissor [X] [Y] [WIDTH] [HEIGHT]",
 			arguments: {
 				X: {
 					type: ArgumentType.NUMBER,
@@ -2674,67 +3398,59 @@ clearBufferuiv*/
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({X,Y,WIDTH,HEIGHT}) {
-				gl.scissor(num(X),num(Y),num(WIDTH),num(HEIGHT));
-			}
 		},
 		{
-			opcode: "uniform1",
+			glfn: "uniform1$",
 			category: Category.UNIFORMS,
 			blockType: BlockType.COMMAND,
-			text: "gl.uniform1[UNIFORM] [LOCATION] [X]",
 			arguments: {
-				X: {
-					type: ArgumentType.NUMBER,
-				},
 				UNIFORM: {
 					type: ArgumentType.STRING,
 					menu: "uniform",
-					defaultValue: "f"
+					defaultValue: "f",
 				},
 				LOCATION: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLUniformLocation,
+				},
+				X: {
+					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({X,Y,Z,W,UNIFORM,LOCATION}) {
-				let location = objectStorage.get(num(LOCATION));
-				if(!location || location[1] !== "uniform location") return;
-				gl["uniform1"+UNIFORM](location[0], num(X));
-			}
 		},
 		{
-			opcode: "uniform2",
+			glfn: "uniform2$",
 			category: Category.UNIFORMS,
 			blockType: BlockType.COMMAND,
-			text: "gl.uniform2[UNIFORM] [LOCATION] [X] [Y]",
 			arguments: {
+				UNIFORM: {
+					type: ArgumentType.STRING,
+					menu: "uniform",
+					defaultValue: "f",
+				},
+				LOCATION: {
+					type: ArgumentType.WebGLUniformLocation,
+				},
 				X: {
 					type: ArgumentType.NUMBER,
 				},
 				Y: {
 					type: ArgumentType.NUMBER,
 				},
+			},
+		},
+		{
+			glfn: "uniform3$",
+			category: Category.UNIFORMS,
+			blockType: BlockType.COMMAND,
+			arguments: {
 				UNIFORM: {
 					type: ArgumentType.STRING,
 					menu: "uniform",
-					defaultValue: "f"
+					defaultValue: "f",
 				},
 				LOCATION: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLUniformLocation,
 				},
-			},
-			def: function({X,Y,Z,W,UNIFORM,LOCATION}) {
-				let location = objectStorage.get(num(LOCATION));
-				if(!location || location[1] !== "uniform location") return;
-				gl["uniform2"+UNIFORM](location[0], num(X), num(Y));
-			}
-		},
-		{
-			opcode: "uniform3",
-			category: Category.UNIFORMS,
-			blockType: BlockType.COMMAND,
-			text: "gl.uniform3[UNIFORM] [LOCATION] [X] [Y] [Z]",
-			arguments: {
 				X: {
 					type: ArgumentType.NUMBER,
 				},
@@ -2744,27 +3460,21 @@ clearBufferuiv*/
 				Z: {
 					type: ArgumentType.NUMBER,
 				},
+			},
+		},
+		{
+			glfn: "uniform4$",
+			category: Category.UNIFORMS,
+			blockType: BlockType.COMMAND,
+			arguments: {
 				UNIFORM: {
 					type: ArgumentType.STRING,
 					menu: "uniform",
-					defaultValue: "f"
+					defaultValue: "f",
 				},
 				LOCATION: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLUniformLocation,
 				},
-			},
-			def: function({X,Y,Z,W,UNIFORM,LOCATION}) {
-				let location = objectStorage.get(num(LOCATION));
-				if(!location || location[1] !== "uniform location") return;
-				gl["uniform3"+UNIFORM](location[0], num(X), num(Y), num(Z));
-			}
-		},
-		{
-			opcode: "uniform4",
-			category: Category.UNIFORMS,
-			blockType: BlockType.COMMAND,
-			text: "gl.uniform4[UNIFORM] [LOCATION] [X] [Y] [Z] [W]",
-			arguments: {
 				X: {
 					type: ArgumentType.NUMBER,
 				},
@@ -2777,57 +3487,33 @@ clearBufferuiv*/
 				W: {
 					type: ArgumentType.NUMBER,
 				},
-				UNIFORM: {
-					type: ArgumentType.STRING,
-					menu: "uniform",
-					defaultValue: "f"
-				},
-				LOCATION: {
-					type: ArgumentType.EMPTY,
-				},
 			},
-			def: function({X,Y,Z,W,UNIFORM,LOCATION}) {
-				let location = objectStorage.get(num(LOCATION));
-				if(!location || location[1] !== "uniform location") return;
-				gl["uniform4"+UNIFORM](location[0], num(X), num(Y), num(Z), num(W));
-			}
 		},
 		{
-			opcode: "uniformMatrixfv",
+			glfn: "uniformMatrix$fv",
 			category: Category.UNIFORMS,
 			blockType: BlockType.COMMAND,
-			text: "gl.uniformMatrix[SIZE]fv [LOCATION] [TRANSPOSE] [DATA]",
 			arguments: {
 				SIZE: {
 					type: ArgumentType.STRING,
 					menu: "uniformMatrix",
-					defaultValue: "4"
+					defaultValue: "4",
 				},
 				LOCATION: {
-					type: ArgumentType.EMPTY,
+					type: ArgumentType.WebGLUniformLocation,
 				},
 				TRANSPOSE: {
-					type: ArgumentType.BOOLEAN
+					type: ArgumentType.BOOLEAN,
 				},
 				DATA: {
-					type: ArgumentType.STRING,
-					menu: "lists",
-					defaultValue: ""
+					type: ArgumentType.LIST,
 				},
 			},
-			def: function({SIZE, LOCATION, TRANSPOSE, DATA}) {
-				let location = objectStorage.get(num(LOCATION));
-				if(!location || location[1] !== "uniform location") return;
-				const list = target.lookupVariableByNameAndType(DATA, "list")
-				if(!list) return;
-				gl["uniformMatrix"+SIZE+"fv"](location[0], TRANSPOSE, list.value);
-			}
 		},
 		{
-			opcode: "vertexAttrib1f",
+			glfn: "vertexAttrib1f",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.COMMAND,
-			text: "gl.vertexAttrib1f [INDEX] [X]",
 			arguments: {
 				INDEX: {
 					type: ArgumentType.NUMBER,
@@ -2836,15 +3522,11 @@ clearBufferuiv*/
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({INDEX,X}) {
-				gl.vertexAttrib1f(INDEX, X);
-			}
 		},
 		{
-			opcode: "vertexAttrib2f",
+			glfn: "vertexAttrib2f",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.COMMAND,
-			text: "gl.vertexAttrib2f [INDEX] [X] [Y]",
 			arguments: {
 				INDEX: {
 					type: ArgumentType.NUMBER,
@@ -2856,15 +3538,11 @@ clearBufferuiv*/
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({INDEX,X,Y}) {
-				gl.vertexAttrib2f(INDEX, X, Y);
-			}
 		},
 		{
-			opcode: "vertexAttrib3f",
+			glfn: "vertexAttrib3f",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.COMMAND,
-			text: "gl.vertexAttrib3f [INDEX] [X] [Y] [Z]",
 			arguments: {
 				INDEX: {
 					type: ArgumentType.NUMBER,
@@ -2879,15 +3557,11 @@ clearBufferuiv*/
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({INDEX,X,Y,Z}) {
-				gl.vertexAttrib3f(INDEX, X, Y, Z);
-			}
 		},
 		{
-			opcode: "vertexAttrib4f",
+			glfn: "vertexAttrib4f",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.COMMAND,
-			text: "gl.vertexAttrib4f [INDEX] [X] [Y] [Z] [W]",
 			arguments: {
 				INDEX: {
 					type: ArgumentType.NUMBER,
@@ -2905,15 +3579,11 @@ clearBufferuiv*/
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({INDEX,X,Y,Z,W}) {
-				gl.vertexAttrib4f(INDEX, X, Y, Z, W);
-			}
 		},
 		{
-			opcode: "vertexAttribI4i",
+			glfn: "vertexAttribI4i",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.COMMAND,
-			text: "gl.vertexAttribI4i [INDEX] [X] [Y] [Z] [W]",
 			arguments: {
 				INDEX: {
 					type: ArgumentType.NUMBER,
@@ -2931,15 +3601,11 @@ clearBufferuiv*/
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({INDEX,X,Y,Z,W}) {
-				gl.vertexAttribI4i(INDEX, X, Y, Z, W);
-			}
 		},
 		{
-			opcode: "vertexAttribI4ui",
+			glfn: "vertexAttribI4ui",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.COMMAND,
-			text: "gl.vertexAttribI4ui [INDEX] [X] [Y] [Z] [W]",
 			arguments: {
 				INDEX: {
 					type: ArgumentType.NUMBER,
@@ -2957,15 +3623,11 @@ clearBufferuiv*/
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({INDEX,X,Y,Z,W}) {
-				gl.vertexAttribI4ui(INDEX, X, Y, Z, W);
-			}
 		},
 		{
-			opcode: "vertexAttribPointer",
+			glfn: "vertexAttribPointer",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.COMMAND,
-			text: "gl.vertexAttribPointer [LOCATION] [SIZE] [TYPE] [NORMALIZED] [STRIDE] [OFFSET]",
 			arguments: {
 				LOCATION: {
 					type: ArgumentType.NUMBER,
@@ -2989,14 +3651,10 @@ clearBufferuiv*/
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({LOCATION,SIZE,TYPE,NORMALIZED,STRIDE,OFFSET}) {
-				gl.vertexAttribPointer(num(LOCATION),num(SIZE),num(TYPE),bool(NORMALIZED),num(STRIDE),num(OFFSET));
-			}
 		},
 		{
-			opcode: "viewport",
+			glfn: "viewport",
 			blockType: BlockType.COMMAND,
-			text: "gl.viewport [X] [Y] [WIDTH] [HEIGHT]",
 			arguments: {
 				X: {
 					type: ArgumentType.NUMBER,
@@ -3011,9 +3669,6 @@ clearBufferuiv*/
 					type: ArgumentType.NUMBER,
 				},
 			},
-			def: function({X,Y,WIDTH,HEIGHT}) {
-				gl.viewport(num(X),num(Y),num(WIDTH),num(HEIGHT));
-			}
 		},
 	]
 
@@ -3071,9 +3726,11 @@ clearBufferuiv*/
 			isTransformFeedback: true,
 			isVertexArray: true,
 			bufferData: true,
+			bufferSubData: true,
+			getUniform: true,
 		};
 		for(let i=0; i<definitions.length; i++) {
-			def[definitions[i].opcode] = true;
+			def[definitions[i].opcode || definitions[i].glfn] = true;
 		}
 		let out = [];
 		for(let i in gl) {
@@ -3097,6 +3754,9 @@ clearBufferuiv*/
 				value: ""+gl[name]
 			}))
 		}
+	}
+	function range(name, length) {
+		return new Array(length).fill(name).map((e,i) => e+i);
 	}
 
 	let extInfo = {
@@ -3125,6 +3785,11 @@ clearBufferuiv*/
 						acceptReporters: false,
 						items: Object.keys(TypedArrays)
 					},
+					contextAttributes: {
+						acceptReporters: true,
+						items: ["alpha", "antialias", "depth", "failIfMajorPerformanceCaveat", "powerPreference", "premultipliedAlpha", "preserveDrawingBuffer",
+							"stencil", "desynchronized"],
+					},
 					uniform: ["f","i","ui"],
 					uniformMatrix: ["2", "2x3", "2x4", "3", "3x2", "3x4", "4", "4x2", "4x3"],
 					activeInfo: ["name", "size", "type"],
@@ -3150,26 +3815,49 @@ clearBufferuiv*/
 					},
 					shaderType: subset(["VERTEX_SHADER", "FRAGMENT_SHADER"]),
 					shaderParameter: subset(["SHADER_TYPE", "DELETE_STATUS", "COMPILE_STATUS"]),
-					programParameter: subset(["DELETE_STATUS", "LINK_STATUS", "VALIDATE_STATUS", "ATTACHED_SHADERS", "ACTIVE_ATTRIBUTES", "ACTIVE_UNIFORMS", "TRANSFORM_FEEDBACK_BUFFER_MODE", "TRANSFORM_FEEDBACK_VARYINGS", "ACTIVE_UNIFORM_BLOCKS"]),
-					bufferTarget: subset(["ARRAY_BUFFER", "ELEMENT_ARRAY_BUFFER", "COPY_READ_BUFFER", "COPY_WRITE_BUFFER", "TRANSFORM_FEEDBACK_BUFFER", "UNIFORM_BUFFER", "PIXEL_PACK_BUFFER", "PIXEL_UNPACK_BUFFER"]),
-					bufferUsage: subset(["STATIC_DRAW", "DYNAMIC_DRAW", "STREAM_DRAW", "STATIC_READ", "DYNAMIC_READ", "STREAM_READ", "STATIC_COPY", "DYNAMIC_COPY", "STREAM_COPY"]),
-					dataType: subset(["FLOAT", "HALF_FLOAT", "BYTE", "UNSIGNED_BYTE", "SHORT", "UNSIGNED_SHORT", "INT", "UNSIGNED_INT", "INT_2_10_10_10_REV", "UNSIGNED_INT_2_10_10_10_REV"]),
+					programParameter: subset(["DELETE_STATUS", "LINK_STATUS", "VALIDATE_STATUS", "ATTACHED_SHADERS", "ACTIVE_ATTRIBUTES", "ACTIVE_UNIFORMS",
+						"TRANSFORM_FEEDBACK_BUFFER_MODE", "TRANSFORM_FEEDBACK_VARYINGS", "ACTIVE_UNIFORM_BLOCKS"]),
+					bufferTarget: subset(["ARRAY_BUFFER", "ELEMENT_ARRAY_BUFFER", "COPY_READ_BUFFER", "COPY_WRITE_BUFFER", "TRANSFORM_FEEDBACK_BUFFER", "UNIFORM_BUFFER",
+						"PIXEL_PACK_BUFFER", "PIXEL_UNPACK_BUFFER"]),
+					bufferUsage: subset(["STATIC_DRAW", "DYNAMIC_DRAW", "STREAM_DRAW", "STATIC_READ", "DYNAMIC_READ", "STREAM_READ", "STATIC_COPY", "DYNAMIC_COPY",
+						"STREAM_COPY"]),
+					dataType: subset(["FLOAT", "HALF_FLOAT", "BYTE", "UNSIGNED_BYTE", "SHORT", "UNSIGNED_SHORT", "INT", "UNSIGNED_INT", "INT_2_10_10_10_REV",
+						"UNSIGNED_INT_2_10_10_10_REV"]),
+					dataTypeInt: subset(["BYTE", "UNSIGNED_BYTE", "SHORT", "UNSIGNED_SHORT", "INT", "UNSIGNED_INT"]),
 					primitiveType: subset(["POINTS", "LINE_STRIP", "LINE_LOOP", "LINES", "TRIANGLE_STRIP", "TRIANGLE_FAN", "TRIANGLES"]),
 					primitiveTypeMain: subset(["POINTS", "LINES", "TRIANGLES"]),
-					capability: subset(["BLEND", "CULL_FACE", "DEPTH_TEST", "DITHER", "POLYGON_OFFSET_FILL", "SAMPLE_ALPHA_TO_COVERAGE", "SAMPLE_COVERAGE", "SCISSOR_TEST", "STENCIL_TEST"]),
+					capability: subset(["BLEND", "CULL_FACE", "DEPTH_TEST", "DITHER", "POLYGON_OFFSET_FILL", "SAMPLE_ALPHA_TO_COVERAGE", "SAMPLE_COVERAGE", "SCISSOR_TEST",
+						"STENCIL_TEST"]),
 					unsignedInts: subset(["UNSIGNED_BYTE", "UNSIGNED_SHORT", "UNSIGNED_INT"]),
 					faces: subset(["FRONT", "BACK", "FRONT_AND_BACK"]),
 					framebufferTarget: subset(["FRAMEBUFFER", "DRAW_FRAMEBUFFER", "READ_FRAMEBUFFER"]),
 					textureTarget: subset(["TEXTURE_2D", "TEXTURE_CUBE_MAP", "TEXTURE_3D", "TEXTURE_2D_ARRAY"]),
-					textureTarget2: subset(["TEXTURE_2D", "TEXTURE_CUBE_MAP_POSITIVE_X", "TEXTURE_CUBE_MAP_NEGATIVE_X", "TEXTURE_CUBE_MAP_POSITIVE_Y", "TEXTURE_CUBE_MAP_NEGATIVE_Y", "TEXTURE_CUBE_MAP_POSITIVE_Z", "TEXTURE_CUBE_MAP_NEGATIVE_Z"]),
-					internalFormat: subset(["RGBA", "RGB", "LUMINANCE_ALPHA", "LUMINANCE", "ALPHA", "R8", "R8_SNORM", "RG8", "RG8_SNORM", "RGB8", "RGB8_SNORM", "RGB565", "RGBA4", "RGB5_A1", "RGBA8", "RGBA8_SNORM", "RGB10_A2", "RGB10_A2UI", "SRGB8", "SRGB8_ALPHA8", "R16F", "RG16F", "RGB16F", "RGBA16F", "R32F", "RG32F", "RGB32F", "RGBA32F", "R11F_G11F_B10F", "RGB9_E5", "R8I", "R8UI", "R16I", "R16UI", "R32I", "R32UI", "RG8I", "RG8UI", "RG16I","RG16UI", "RG32I", "RG32UI", "RGB8I", "RGB8UI", "RGB16I", "RGB16UI", "RGB32I", "RGB32UI", "RGBA8I", "RGBA8UI", "RGBA16I", "RGBA16UI", "RGBA32I", "RGBA32UI"]),
+					textureTarget2: subset(["TEXTURE_2D", "TEXTURE_CUBE_MAP_POSITIVE_X", "TEXTURE_CUBE_MAP_NEGATIVE_X", "TEXTURE_CUBE_MAP_POSITIVE_Y",
+						"TEXTURE_CUBE_MAP_NEGATIVE_Y", "TEXTURE_CUBE_MAP_POSITIVE_Z", "TEXTURE_CUBE_MAP_NEGATIVE_Z"]),
+					textureTarget3: subset(["TEXTURE_3D", "TEXTURE_2D_ARRAY"]),
+					textureTarget2D: subset(["TEXTURE_2D", "TEXTURE_CUBE_MAP"]),
+					textureTarget3D: subset(["TEXTURE_3D", "TEXTURE_2D_ARRAY"]),
+					internalFormat: subset(["RGBA", "RGB", "LUMINANCE_ALPHA", "LUMINANCE", "ALPHA", "R8", "R8_SNORM", "RG8", "RG8_SNORM", "RGB8", "RGB8_SNORM", "RGB565",
+						"RGBA4", "RGB5_A1", "RGBA8", "RGBA8_SNORM", "RGB10_A2", "RGB10_A2UI", "SRGB8", "SRGB8_ALPHA8", "R16F", "RG16F", "RGB16F", "RGBA16F", "R32F",
+						"RG32F", "RGB32F", "RGBA32F", "R11F_G11F_B10F", "RGB9_E5", "R8I", "R8UI", "R16I", "R16UI", "R32I", "R32UI", "RG8I", "RG8UI", "RG16I","RG16UI",
+						"RG32I", "RG32UI", "RGB8I", "RGB8UI", "RGB16I", "RGB16UI", "RGB32I", "RGB32UI", "RGBA8I", "RGBA8UI", "RGBA16I", "RGBA16UI", "RGBA32I", "RGBA32UI"]),
+					internalFormat2: subset(["RGBA", "RGB", "LUMINANCE_ALPHA", "LUMINANCE", "ALPHA"]),
+					internalFormatRenderable: subset(["RGBA", "RGB", "R8", "RG8", "RGB8", "RGB565", "RGBA4", "RGB5_A1", "RGBA8", "RGB10_A2", "RGB10_A2UI", "SRGB8_ALPHA8",
+						"R8I", "R8UI", "R16I", "R16UI", "R32I", "R32UI", "RG8I", "RG8UI", "RG16I", "RG16UI", "RG32I", "RG32UI", "RGBA8I", "RGBA8UI", "RGBA16I", "RGBA16UI",
+						"RGBA32I", "RGBA32UI"]),
+					internalFormat3: subset(["R8", "R16F", "R32F", "R8UI", "RG8", "RG16F", "RG32F", "RG8UI", "RGB8", "SRGB8", "RGB565", "R11F_G11F_B10F", "RGB9_E5",
+						"RGB16F", "RGB32F", "RGB8UI", "RGBA8", "SRGB8_ALPHA8", "RGB5_A1", "RGBA4", "RGBA16F", "RGBA32F", "RGBA8UI"]),
 					format: subset(["RED", "RED_INTEGER", "RG", "RG_INTEGER", "RGB", "RGB_INTEGER", "RGBA", "RGBA_INTEGER", "LUMINANCE_ALPHA", "LUMINANCE", "ALPHA"]),
-					textureDataType: subset(["UNSIGNED_BYTE", "BYTE", "UNSIGNED_SHORT", "SHORT", "UNSIGNED_INT", "INT", "HALF_FLOAT", "FLOAT", "UNSIGNED_INT_2_10_10_10_REV", "UNSIGNED_INT_10F_11F_11F_REV", "UNSIGNED_INT_5_9_9_9_REV", "UNSIGNED_INT_24_8", "UNSIGNED_SHORT_5_6_5", "UNSIGNED_SHORT_4_4_4_4", "UNSIGNED_SHORT_5_5_5_1", "FLOAT_32_UNSIGNED_INT_24_8_REV"]),
+					format2: subset(["RED", "RED_INTEGER", "RG", "RG_INTEGER", "RGB", "RGB_INTEGER", "RGBA", "RGBA_INTEGER", "ALPHA"]),
+					textureDataType: subset(["UNSIGNED_BYTE", "BYTE", "UNSIGNED_SHORT", "SHORT", "UNSIGNED_INT", "INT", "HALF_FLOAT", "FLOAT",
+						"UNSIGNED_INT_2_10_10_10_REV", "UNSIGNED_INT_10F_11F_11F_REV", "UNSIGNED_INT_5_9_9_9_REV", "UNSIGNED_INT_24_8", "UNSIGNED_SHORT_5_6_5",
+						"UNSIGNED_SHORT_4_4_4_4", "UNSIGNED_SHORT_5_5_5_1", "FLOAT_32_UNSIGNED_INT_24_8_REV"]),
 					frontFace: subset(["CW", "CCW"]),
 					hintTarget: subset(["GENERATE_MIPMAP_HINT", "FRAGMENT_SHADER_DERIVATIVE_HINT"]),
 					hintMode: subset(["FASTEST", "NICEST", "DONT_CARE"]),
 					texParamTarget: subset(["TEXTURE_2D", "TEXTURE_3D", "TEXTURE_CUBE_MAP", "TEXTURE_2D_ARRAY"]),
-					texParamPnameI: subset(["TEXTURE_MAG_FILTER", "TEXTURE_MIN_FILTER", "TEXTURE_WRAP_S", "TEXTURE_WRAP_T", "TEXTURE_WRAP_R", "TEXTURE_BASE_LEVEL", "TEXTURE_COMPARE_FUNC", "TEXTURE_COMPARE_MODE", "TEXTURE_MAX_LEVEL"]),
+					texParamPnameI: subset(["TEXTURE_MAG_FILTER", "TEXTURE_MIN_FILTER", "TEXTURE_WRAP_S", "TEXTURE_WRAP_T", "TEXTURE_WRAP_R", "TEXTURE_BASE_LEVEL",
+						"TEXTURE_COMPARE_FUNC", "TEXTURE_COMPARE_MODE", "TEXTURE_MAX_LEVEL"]),
 					texParamPnameF: subset(["TEXTURE_MIN_LOD", "TEXTURE_MAX_LOD"]),
 					syncCondition: subset(["SYNC_GPU_COMMANDS_COMPLETE"]),
 					syncParameter: subset(["OBJECT_TYPE", "SYNC_STATUS", "SYNC_CONDITION", "SYNC_FLAGS"]),
@@ -3179,13 +3867,78 @@ clearBufferuiv*/
 					compareFunc: subset(["NEVER", "LESS", "EQUAL", "LEQUAL", "GREATER", "NOTEQUAL", "GEQUAL", "ALWAYS"]),
 					stencilOp: subset(["KEEP", "ZERO", "REPLACE", "INCR", "INCR_WRAP", "DECR", "DECR_WRAP", "INVERT"]),
 					blendEquation: subset(["FUNC_ADD", "FUNC_SUBTRACT", "FUNC_REVERSE_SUBTRACT", "MIN", "MAX"]),
-					blendFunc: subset(["ZERO", "ONE", "SRC_COLOR", "ONE_MINUS_SRC_COLOR", "DST_COLOR", "ONE_MINUS_DST_COLOR", "SRC_ALPHA", "ONE_MINUS_SRC_ALPHA", "DST_ALPHA", "ONE_MINUS_DST_ALPHA", "CONSTANT_COLOR", "ONE_MINUS_CONSTANT_COLOR", "CONSTANT_ALPHA", "ONE_MINUS_CONSTANT_ALPHA", "SRC_ALPHA_SATURATE"]),
-					pixelstorei: subset(["PACK_ALIGNMENT", "UNPACK_ALIGNMENT", "UNPACK_FLIP_Y_WEBGL", "UNPACK_PREMULTIPLY_ALPHA_WEBGL", "UNPACK_COLORSPACE_CONVERSION_WEBGL", "PACK_ROW_LENGTH", "PACK_SKIP_PIXELS", "PACK_SKIP_ROWS", "UNPACK_ROW_LENGTH", "UNPACK_IMAGE_HEIGHT", "UNPACK_SKIP_PIXELS", "UNPACK_SKIP_ROWS", "UNPACK_SKIP_IMAGES"]),
+					blendFunc: subset(["ZERO", "ONE", "SRC_COLOR", "ONE_MINUS_SRC_COLOR", "DST_COLOR", "ONE_MINUS_DST_COLOR", "SRC_ALPHA", "ONE_MINUS_SRC_ALPHA",
+						"DST_ALPHA", "ONE_MINUS_DST_ALPHA", "CONSTANT_COLOR", "ONE_MINUS_CONSTANT_COLOR", "CONSTANT_ALPHA", "ONE_MINUS_CONSTANT_ALPHA",
+						"SRC_ALPHA_SATURATE"]),
+					pixelstorei: subset(["PACK_ALIGNMENT", "UNPACK_ALIGNMENT", "UNPACK_FLIP_Y_WEBGL", "UNPACK_PREMULTIPLY_ALPHA_WEBGL",
+						"UNPACK_COLORSPACE_CONVERSION_WEBGL", "PACK_ROW_LENGTH", "PACK_SKIP_PIXELS", "PACK_SKIP_ROWS", "UNPACK_ROW_LENGTH", "UNPACK_IMAGE_HEIGHT",
+						"UNPACK_SKIP_PIXELS", "UNPACK_SKIP_ROWS", "UNPACK_SKIP_IMAGES"]),
 					transformFeedbackTarget: subset(["TRANSFORM_FEEDBACK"]),
 					bufferMode: subset(["SEPARATE_ATTRIBS", "INTERLEAVED_ATTRIBS"]),
 					queryTarget: subset(["ANY_SAMPLES_PASSED", "ANY_SAMPLES_PASSED_CONSERVATIVE", "TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN"]),
 					queryPname1: subset(["CURRENT_QUERY"]),
 					queryPname2: subset(["QUERY_RESULT", "QUERY_RESULT_AVAILABLE"]),
+					bufferType: subset(["COLOR", "DEPTH", "STENCIL", "DEPTH_STENCIL"]),
+					bindBufferTarget: subset(["TRANSFORM_FEEDBACK_BUFFER", "UNIFORM_BUFFER"]),
+					renderbufferTarget: subset(["RENDERBUFFER"]),
+					readBuffer: subset(["BACK","NONE",...range("COLOR_ATTACHMENT",16)]),
+					samplerParameterf: subset(["TEXTURE_MAX_LOD", "TEXTURE_MIN_LOD"]),
+					samplerParameteri: subset(["TEXTURE_COMPARE_FUNC", "TEXTURE_COMPARE_MODE", "TEXTURE_MAG_FILTER", "TEXTURE_MIN_FILTER", "TEXTURE_WRAP_R",
+						"TEXTURE_WRAP_S", "TEXTURE_WRAP_T"]),
+					attachment: subset([...range("COLOR_ATTACHMENT",16), "DEPTH_ATTACHMENT", "DEPTH_STENCIL_ATTACHMENT", "STENCIL_ATTACHMENT"]),
+					bufferReadWriteTarget: subset(["ARRAY_BUFFER", "ELEMENT_ARRAY_BUFFER", "COPY_READ_BUFFER", "COPY_WRITE_BUFFER", "TRANSFORM_FEEDBACK_BUFFER",
+						"UNIFORM_BUFFER", "PIXEL_PACK_BUFFER", "PIXEL_UNPACK_BUFFER"]),
+					activeUniformsPname: subset(["UNIFORM_TYPE", "UNIFORM_SIZE", "UNIFORM_BLOCK_INDEX", "UNIFORM_OFFSET", "UNIFORM_ARRAY_STRIDE", "UNIFORM_MATRIX_STRIDE",
+						"UNIFORM_IS_ROW_MAJOR"]),
+					uniformBlockParam: subset(["UNIFORM_BLOCK_BINDING", "UNIFORM_BLOCK_DATA_SIZE", "UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES", "UNIFORM_BLOCK_ACTIVE_UNIFORMS",
+						"UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER", "UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER"]),
+					parameter: subset(["ACTIVE_TEXTURE", "ALIASED_LINE_WIDTH_RANGE", "ALIASED_POINT_SIZE_RANGE", "ALPHA_BITS", "ARRAY_BUFFER_BINDING", "BLEND",
+						"BLEND_COLOR", "BLEND_DST_ALPHA", "BLEND_DST_RGB", "BLEND_EQUATION", "BLEND_EQUATION_ALPHA", "BLEND_EQUATION_RGB", "BLEND_SRC_ALPHA",
+						"BLEND_SRC_RGB", "BLUE_BITS", "COLOR_CLEAR_VALUE", "COLOR_WRITEMASK", "COMPRESSED_TEXTURE_FORMATS", "CULL_FACE", "CULL_FACE_MODE",
+						"CURRENT_PROGRAM", "DEPTH_BITS", "DEPTH_CLEAR_VALUE", "DEPTH_FUNC", "DEPTH_RANGE", "DEPTH_TEST", "DEPTH_WRITEMASK", "DITHER",
+						"ELEMENT_ARRAY_BUFFER_BINDING", "FRAMEBUFFER_BINDING", "FRONT_FACE", "GENERATE_MIPMAP_HINT", "GREEN_BITS", "IMPLEMENTATION_COLOR_READ_FORMAT",
+						"IMPLEMENTATION_COLOR_READ_TYPE", "LINE_WIDTH", "MAX_COMBINED_TEXTURE_IMAGE_UNITS", "MAX_CUBE_MAP_TEXTURE_SIZE", "MAX_FRAGMENT_UNIFORM_VECTORS",
+						"MAX_RENDERBUFFER_SIZE", "MAX_TEXTURE_IMAGE_UNITS", "MAX_TEXTURE_SIZE", "MAX_VARYING_VECTORS", "MAX_VERTEX_ATTRIBS",
+						"MAX_VERTEX_TEXTURE_IMAGE_UNITS", "MAX_VERTEX_UNIFORM_VECTORS", "MAX_VIEWPORT_DIMS", "PACK_ALIGNMENT", "POLYGON_OFFSET_FACTOR",
+						"POLYGON_OFFSET_FILL", "POLYGON_OFFSET_UNITS", "RED_BITS", "RENDERBUFFER_BINDING", "RENDERER", "SAMPLE_BUFFERS", "SAMPLE_COVERAGE_INVERT",
+						"SAMPLE_COVERAGE_VALUE", "SAMPLES", "SCISSOR_BOX", "SCISSOR_TEST", "SHADING_LANGUAGE_VERSION", "STENCIL_BACK_FAIL", "STENCIL_BACK_FUNC",
+						"STENCIL_BACK_PASS_DEPTH_FAIL", "STENCIL_BACK_PASS_DEPTH_PASS", "STENCIL_BACK_REF", "STENCIL_BACK_VALUE_MASK", "STENCIL_BACK_WRITEMASK",
+						"STENCIL_BITS", "STENCIL_CLEAR_VALUE", "STENCIL_FAIL", "STENCIL_FUNC", "STENCIL_PASS_DEPTH_FAIL", "STENCIL_PASS_DEPTH_PASS", "STENCIL_REF",
+						"STENCIL_TEST", "STENCIL_VALUE_MASK", "STENCIL_WRITEMASK", "SUBPIXEL_BITS", "TEXTURE_BINDING_2D", "TEXTURE_BINDING_CUBE_MAP", "UNPACK_ALIGNMENT",
+						"UNPACK_COLORSPACE_CONVERSION_WEBGL", "UNPACK_FLIP_Y_WEBGL", "UNPACK_PREMULTIPLY_ALPHA_WEBGL", "VENDOR", "VERSION", "VIEWPORT",
+						"COPY_READ_BUFFER_BINDING", "COPY_WRITE_BUFFER_BINDING", ...range("DRAW_BUFFER",16), "DRAW_FRAMEBUFFER_BINDING", "FRAGMENT_SHADER_DERIVATIVE_HINT",
+						"MAX_3D_TEXTURE_SIZE", "MAX_ARRAY_TEXTURE_LAYERS", "MAX_CLIENT_WAIT_TIMEOUT_WEBGL", "MAX_COLOR_ATTACHMENTS",
+						"MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS", "MAX_COMBINED_UNIFORM_BLOCKS", "MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS", "MAX_DRAW_BUFFERS",
+						"MAX_ELEMENT_INDEX", "MAX_ELEMENTS_INDICES", "MAX_ELEMENTS_VERTICES", "MAX_FRAGMENT_INPUT_COMPONENTS", "MAX_FRAGMENT_UNIFORM_BLOCKS",
+						"MAX_FRAGMENT_UNIFORM_COMPONENTS", "MAX_PROGRAM_TEXEL_OFFSET", "MAX_SAMPLES", "MAX_SERVER_WAIT_TIMEOUT", "MAX_TEXTURE_LOD_BIAS",
+						"MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS", "MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS", "MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS",
+						"MAX_UNIFORM_BLOCK_SIZE", "MAX_UNIFORM_BUFFER_BINDINGS", "MAX_VARYING_COMPONENTS", "MAX_VERTEX_OUTPUT_COMPONENTS", "MAX_VERTEX_UNIFORM_BLOCKS",
+						"MAX_VERTEX_UNIFORM_COMPONENTS", "MIN_PROGRAM_TEXEL_OFFSET", "PACK_ROW_LENGTH", "PACK_SKIP_PIXELS", "PACK_SKIP_ROWS", "PIXEL_PACK_BUFFER_BINDING",
+						"PIXEL_UNPACK_BUFFER_BINDING", "RASTERIZER_DISCARD", "READ_BUFFER", "READ_FRAMEBUFFER_BINDING", "SAMPLE_ALPHA_TO_COVERAGE", "SAMPLE_COVERAGE",
+						"SAMPLER_BINDING", "TEXTURE_BINDING_2D_ARRAY", "TEXTURE_BINDING_3D", "TRANSFORM_FEEDBACK_ACTIVE", "TRANSFORM_FEEDBACK_BINDING",
+						"TRANSFORM_FEEDBACK_BUFFER_BINDING", "TRANSFORM_FEEDBACK_PAUSED", "UNIFORM_BUFFER_BINDING", "UNIFORM_BUFFER_OFFSET_ALIGNMENT",
+						"UNPACK_IMAGE_HEIGHT", "UNPACK_ROW_LENGTH", "UNPACK_SKIP_IMAGES", "UNPACK_SKIP_PIXELS", "UNPACK_SKIP_ROWS", "VERTEX_ARRAY_BINDING"]),
+					textureParameter: subset(["TEXTURE_MAG_FILTER", "TEXTURE_MIN_FILTER", "TEXTURE_WRAP_S", "TEXTURE_WRAP_T", "TEXTURE_BASE_LEVEL", "TEXTURE_COMPARE_FUNC",
+						"TEXTURE_COMPARE_MODE", "TEXTURE_IMMUTABLE_FORMAT", "TEXTURE_IMMUTABLE_LEVELS", "TEXTURE_MAX_LEVEL", "TEXTURE_MAX_LOD", "TEXTURE_MIN_LOD",
+						"TEXTURE_WRAP_R"]),
+					framebufferAttachmentParam: subset(["FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE", "FRAMEBUFFER_ATTACHMENT_OBJECT_NAME", "FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL",
+						"FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE", "FRAMEBUFFER_ATTACHMENT_ALPHA_SIZE", "FRAMEBUFFER_ATTACHMENT_BLUE_SIZE",
+						"FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING", "FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE", "FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE",
+						"FRAMEBUFFER_ATTACHMENT_GREEN_SIZE", "FRAMEBUFFER_ATTACHMENT_RED_SIZE", "FRAMEBUFFER_ATTACHMENT_STENCIL_SIZE",
+						"FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER"]),
+					renderbufferParam: subset(["RENDERBUFFER_WIDTH", "RENDERBUFFER_HEIGHT", "RENDERBUFFER_INTERNAL_FORMAT", "RENDERBUFFER_GREEN_SIZE",
+						"RENDERBUFFER_BLUE_SIZE", "RENDERBUFFER_RED_SIZE", "RENDERBUFFER_ALPHA_SIZE", "RENDERBUFFER_DEPTH_SIZE", "RENDERBUFFER_STENCIL_SIZE",
+						"RENDERBUFFER_SAMPLES"]),
+					bufferParam: subset(["BUFFER_SIZE", "BUFFER_USAGE"]),
+					samplerParam: subset(["TEXTURE_COMPARE_FUNC", "TEXTURE_COMPARE_MODE", "TEXTURE_MAG_FILTER", "TEXTURE_MAX_LOD", "TEXTURE_MIN_FILTER", "TEXTURE_MIN_LOD",
+						"TEXTURE_WRAP_R", "TEXTURE_WRAP_S", "TEXTURE_WRAP_T"]),
+					vertexParam: subset(["VERTEX_ATTRIB_ARRAY_BUFFER_BINDING", "VERTEX_ATTRIB_ARRAY_ENABLED", "VERTEX_ATTRIB_ARRAY_SIZE", "VERTEX_ATTRIB_ARRAY_STRIDE",
+						"VERTEX_ATTRIB_ARRAY_TYPE", "VERTEX_ATTRIB_ARRAY_NORMALIZED", "CURRENT_VERTEX_ATTRIB", "VERTEX_ATTRIB_ARRAY_INTEGER",
+						"VERTEX_ATTRIB_ARRAY_DIVISOR"]),
+					vertexParamOffset: subset(["VERTEX_ATTRIB_ARRAY_POINTER"]),
+					indexedTarget: subset(["TRANSFORM_FEEDBACK_BUFFER_BINDING", "TRANSFORM_FEEDBACK_BUFFER_SIZE", "TRANSFORM_FEEDBACK_BUFFER_START",
+						"UNIFORM_BUFFER_BINDING", "UNIFORM_BUFFER_SIZE", "UNIFORM_BUFFER_START"]),
+					internalFormatParam: subset(["SAMPLES"]),
 				}
 			};
 
@@ -3201,7 +3954,6 @@ clearBufferuiv*/
 			let all = [...local, ...global];
 			all.sort();
 			if(all.length == 0) return ["my list"];
-			console.log(all);
 			return all;
 		}
 		costumes() {
@@ -3214,22 +3966,9 @@ clearBufferuiv*/
 		}
 	}
 
-	for(let block of definitions) {
-		if(block == "---") continue;
-		Extension.prototype[block.opcode] = block.def;
-		if(block.category) block.hideFromPalette = true;
-/*		function(...args) {   TODO: Uncomment
-			try {
-				return block.def.apply(this, ...args);
-			} catch(e) {
-				console.error(e);
-				return "";
-			}
-		}*/ 
-	}
 
 
-//*
+	// Debug console log
 	const ogl = gl;
 	gl = {}
 	for(let i in ogl) {
@@ -3249,25 +3988,191 @@ clearBufferuiv*/
 		}
 	}
 	gl.__proto__ = ogl;
-	//*/
+
+
+	// Compiler
+	function processBlockArgs(block, blockArgs, fnSrc, fnArgs, glArgs, blArgs, settings) {
+		for (let name in blockArgs) {
+			let readAs = name;
+			const blockArg = blockArgs[name];
+			const type = blockArg.type;
+			if (!type) console.warn(block);
+			if (type == ArgumentType.LIST) {
+				readAs = `${readAs}.value`;
+				if (blockArg.join) {
+					readAs = `${readAs}.join(${JSON.stringify(blockArg.join)})`;
+				}
+				blockArg.type = ArgumentType.STRING;
+				blockArg.menu = "lists";
+				fnSrc += `    ${name} = target.lookupVariableByNameAndType(${name}, "list");\n`;
+				if (settings.returns) {
+					fnSrc += `    if (!${name}) return "";\n`;
+				} else {
+					fnSrc += `    if (!${name}) return;\n`;
+				}
+				if (blockArg.typedArray) {
+					const typeLookup = blockArg.typeLookup ?? "TypedArrays";
+					if (blockArg.typeSource) {
+						readAs = `new (${typeLookup}[${blockArg.typeSource}])(${readAs}.map(Number))`;
+					} else {
+						blArgs["ARRAYTYPE"] = {
+							type: ArgumentType.STRING,
+							menu: "typedArrays",
+							defaultValue: "Float32Array"
+						};
+						fnArgs.push("ARRAYTYPE");
+						readAs = `new (${typeLookup}[ARRAYTYPE])(${readAs}.map(Number))`;
+					}
+				}
+				settings.usesTarget = true;
+			}
+			if (type == ArgumentType.VECTOR) {
+				let glArgsFake = [];
+				fnSrc = processBlockArgs(block, blockArg.values, fnSrc, fnArgs, glArgsFake, blArgs, settings);
+				readAs = `[${glArgsFake.join(", ")}]`;
+			}
+			if (type == ArgumentType.PROPERTY) {
+				blockArg.type = ArgumentType.STRING;
+				settings.propertyArgument = name;
+			}
+			if (type.startsWith("WebGL")) {
+				fnSrc += `    ${name} = objectStorage.getTyped(num(${name}), "${type}");\n`;
+				if (block.deletes) fnSrc += `    objectStorage.deleteByObject(${name});\n`;
+			}
+			if (type == ArgumentType.NUMBER) {
+				readAs = `num(${readAs})`;
+			}
+			if (type == ArgumentType.STRING) {
+				readAs = `str(${readAs})`;
+			}
+			if (type == ArgumentType.BOOLEAN) {
+				readAs = `bool(${readAs})`;
+			}
+			// ---------------------------------
+			if (type !== ArgumentType.PROPERTY) {
+				glArgs.push(readAs);
+			}
+			if (type !== ArgumentType.VECTOR) {
+				blArgs[name] = blockArg;
+				fnArgs.push(name);
+			}
+		}
+		return fnSrc;
+	}
+
+	let status = "";
+	let status2 = "";
+	let statusTotal = -5;
+	let statusGood = 0;
+	let totalSrc = "let {Scratch, vm, runtime, renderer, gl, num, str, bool, objectStorage, sanitizeOutput, getCostume, Extension, TypedArrays, GlTypeToTypedArray, onContextRecreatedCbs} = all;\n\n";
+	totalSrc += "onContextRecreatedCbs.push((newCanvas, newGl) => {\n";
+	totalSrc += "    gl = newGl;\n";
+	totalSrc += "})\n\n";
+	for (let block of definitions) {
+		if (block == "---") continue;
+		statusTotal++;
+		if (statusTotal > 0) {
+			if (block.glfn) {
+				status += "🟩";
+				statusGood++;
+			} else {
+				status += "🟥";
+				status2 += `\n❌ ${block.opcode}`;
+			}
+		}
+
+		if (block.category) block.hideFromPalette = true;
+
+		if (block.glfn) {
+			block.opcode = block.glfn.replaceAll("$","");
+			block.glfn = block.glfn.split("-")[0];
+			if (block.text) console.error("text", block.glfn);
+			if (block.def) console.error("def", block.glfn);
+			const settings = {
+				returns: false,
+				propertyArgument: null,
+				usesTarget: false
+			};
+			if (block.blockType == BlockType.REPORTER || block.blockType == BlockType.BOOLEAN) {
+				block.disableMonitor = true;
+				settings.returns = true;
+			}
+
+			let blockArgs = block.arguments || {};
+			
+			let fnSrc = "\n";
+			let fnArgs = [];
+			let glArgs = [];
+			let blArgs = block.arguments = {};
+			fnSrc = processBlockArgs(block, blockArgs, fnSrc, fnArgs, glArgs, blArgs, settings);
+			let fnArgsWrapped = fnArgs.map(name => `[${name}]`);
+
+			let fnToCall = `gl.${block.glfn}`;
+			let blockText = `gl.${block.glfn}`;
+			if (block.glfn.includes("$")) {
+				let parts = block.glfn.split("$");
+				let param1 = glArgs.shift();
+				let param2 = fnArgsWrapped.shift();
+				fnToCall = `gl["${parts[0]}"+${param1}+"${parts[1]}"]`;
+				blockText = `gl.${parts[0]}${param2}${parts[1]}`;
+			} else if (!gl[block.glfn]) {
+				console.warn("gl not found", block.glfn);
+			}
+
+			let glCall = `${fnToCall}(${glArgs.join(", ")})`;
+			if (block.mapObjectsToIds) {
+				glCall = `${glCall}.map(o => objectStorage.getIdByObject(o))`;
+			}
+			if (settings.propertyArgument) {
+				glCall = `${glCall}?.[${settings.propertyArgument}] ?? ""`;
+				fnArgsWrapped.splice(fnArgsWrapped.length-1, 0, ".");
+			}
+			if (settings.returns) {
+				fnSrc += `    return sanitizeOutput(${glCall});\n`;
+			} else {
+				fnSrc += `    ${glCall};\n`;
+			}
+
+			if (block.needsRefresh) {
+				fnSrc += `    renderer.dirty = true;\n`;
+				fnSrc += `    runtime.requestRedraw();\n`;
+			}
+
+			block.text = `${blockText} ${fnArgsWrapped.join(" ")}`;
+			totalSrc += `// ${block.text}\n`;
+			totalSrc += `Extension.prototype[${JSON.stringify(block.opcode)}] = function({${fnArgs}}${settings.usesTarget ? ", {target}" : ""}) {${fnSrc}}\n\n`;
+		}
+		if (block.def) {
+			Extension.prototype[block.opcode] = block.def;
+		}
+	}
+	(new Function("all", totalSrc))({Scratch, vm, runtime, renderer, gl, num, str, bool, objectStorage, sanitizeOutput, getCostume, Extension, TypedArrays, GlTypeToTypedArray, onContextRecreatedCbs});
+	console.log(totalSrc);
+	console.log(status, `${statusGood}/${statusTotal} ${Math.round(statusGood/statusTotal*1000)/10}%${status2}`);
+
+
 	
 
+	// Categories
 	// TODO: precalc!
 	const gbx = vm.runtime.getBlocksXML;
 	vm.runtime.getBlocksXML = function(target) {
 		const res = gbx.call(this, target);
 		try {
-		const blocks = this._blockInfo.find(categoryInfo => categoryInfo.id == "webgl2").blocks;
-		for(let name in Category) {
-			const paletteBlocks = blocks.filter(block => (block.info && block.info.category == Category[name]));
-			res.push({
-				id: Category[name],
-				xml: `<category name="${Category[name]}" id="gl_${Category[name].toLowerCase()}" colour="#d10000" secondaryColour="#bd0000">${
-						paletteBlocks.map(block => block.xml).join('')}</category>`
-			});
+			const blocks = this._blockInfo.find(categoryInfo => categoryInfo.id == "webgl2").blocks;
+			for(let name in Category) {
+				const paletteBlocks = blocks.filter(block => (block.info && block.info.category == Category[name]));
+				res.push({
+					id: Category[name],
+					xml: `<category name="${Category[name]}" id="gl_${Category[name].toLowerCase()}" colour="#d10000" secondaryColour="#bd0000">${
+							paletteBlocks.map(block => block.xml).join('')}</category>`
+				});
+			}
+		} catch(e) {
+			console.error(e);
 		}
-		} catch(e) { console.error(e); }
 		return res;
 	}
+
 	Scratch.extensions.register(new Extension());
 })(Scratch);
