@@ -198,9 +198,14 @@
 
 	// Register new drawable group "webgl2"
 	let index = renderer._groupOrdering.indexOf("video");
-	let copy = renderer._groupOrdering.slice();
-	copy.splice(index, 0, "webgl2");
-	renderer.setLayerGroupOrdering(copy);
+	renderer._groupOrdering.splice(index+1, 0, "webgl2");
+	renderer._layerGroups["webgl2"] = {
+		groupIndex: 0,
+		drawListOffset: renderer._layerGroups["video"].drawListOffset
+	};
+	for (let i = 0; i < renderer._groupOrdering.length; i++) {
+		renderer._layerGroups[renderer._groupOrdering[i]].groupIndex = i;
+	}
 
 	// Create drawable and skin
 	skinId = renderer._nextSkinId++;
