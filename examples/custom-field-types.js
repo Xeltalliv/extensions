@@ -3,6 +3,7 @@
 
   const vm = Scratch.vm;
   const runtime = vm.runtime;
+  const hasOwn = (object, property) => Object.prototype.hasOwnProperty.call(object, property);
 
   // This is optional but makes changing the name easier.
   Scratch.ArgumentType.YESNO = 'FieldXeltallivYesNo';
@@ -11,6 +12,7 @@
   // for custom fields separately from the category colors, even though
   // it is important feature used by almost all default inputs. Example:
   // https://github.com/LLK/scratch-blocks/blob/bdfeaef0f2021997b85385253604690aa24f299a/blocks_common/math.js#L52-L54
+  // the "output" variable may be passed but it does not actually apply in practice so we have to add "fi.output"
   const bcfi = runtime._buildCustomFieldInfo.bind(runtime);
   const bcftfsb = runtime._buildCustomFieldTypeForScratchBlocks.bind(runtime);
   let fi = null;
@@ -24,6 +26,7 @@
       if (fi.color1) res.json.colour = fi.color1;
       if (fi.color2) res.json.colourSecondary = fi.color2;
       if (fi.color3) res.json.colourTertiary = fi.color3;
+      if (hasOwn(fi, 'output')) res.json.output = fi.output;
       fi = null;
     }
     return res;
@@ -37,7 +40,7 @@
   // Implement the field types setup
   implementations[Scratch.ArgumentType.YESNO] = null;
   customFieldTypes[Scratch.ArgumentType.YESNO] = {
-    output: 'string',
+    output: Scratch.ArgumentType.STRING,
     outputShape: 2,
     color1: '#FFFFFF',
     color2: '#FFFFFF',
