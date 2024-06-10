@@ -3423,6 +3423,24 @@ texSubImage3D*/
 			},
 		},
 		{
+			glfn: "uniform1$v",
+			category: Category.UNIFORMS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				UNIFORM: {
+					type: ArgumentType.STRING,
+					menu: "uniform",
+					defaultValue: "f",
+				},
+				LOCATION: {
+					type: ArgumentType.WebGLUniformLocation,
+				},
+				DATA: {
+					type: ArgumentType.LIST,
+				},
+			},
+		},
+		{
 			glfn: "uniform2$",
 			category: Category.UNIFORMS,
 			blockType: BlockType.COMMAND,
@@ -3440,6 +3458,24 @@ texSubImage3D*/
 				},
 				Y: {
 					type: ArgumentType.NUMBER,
+				},
+			},
+		},
+		{
+			glfn: "uniform2$v",
+			category: Category.UNIFORMS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				UNIFORM: {
+					type: ArgumentType.STRING,
+					menu: "uniform",
+					defaultValue: "f",
+				},
+				LOCATION: {
+					type: ArgumentType.WebGLUniformLocation,
+				},
+				DATA: {
+					type: ArgumentType.LIST,
 				},
 			},
 		},
@@ -3468,6 +3504,24 @@ texSubImage3D*/
 			},
 		},
 		{
+			glfn: "uniform3$v",
+			category: Category.UNIFORMS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				UNIFORM: {
+					type: ArgumentType.STRING,
+					menu: "uniform",
+					defaultValue: "f",
+				},
+				LOCATION: {
+					type: ArgumentType.WebGLUniformLocation,
+				},
+				DATA: {
+					type: ArgumentType.LIST,
+				},
+			},
+		},
+		{
 			glfn: "uniform4$",
 			category: Category.UNIFORMS,
 			blockType: BlockType.COMMAND,
@@ -3491,6 +3545,24 @@ texSubImage3D*/
 				},
 				W: {
 					type: ArgumentType.NUMBER,
+				},
+			},
+		},
+		{
+			glfn: "uniform4$v",
+			category: Category.UNIFORMS,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				UNIFORM: {
+					type: ArgumentType.STRING,
+					menu: "uniform",
+					defaultValue: "f",
+				},
+				LOCATION: {
+					type: ArgumentType.WebGLUniformLocation,
+				},
+				DATA: {
+					type: ArgumentType.LIST,
 				},
 			},
 		},
@@ -3529,6 +3601,19 @@ texSubImage3D*/
 			},
 		},
 		{
+			glfn: "vertexAttrib1fv",
+			category: Category.ATTRIBUTES,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				INDEX: {
+					type: ArgumentType.NUMBER,
+				},
+				DATA: {
+					type: ArgumentType.LIST,
+				},
+			},
+		},
+		{
 			glfn: "vertexAttrib2f",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.COMMAND,
@@ -3541,6 +3626,19 @@ texSubImage3D*/
 				},
 				Y: {
 					type: ArgumentType.NUMBER,
+				},
+			},
+		},
+		{
+			glfn: "vertexAttrib2fv",
+			category: Category.ATTRIBUTES,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				INDEX: {
+					type: ArgumentType.NUMBER,
+				},
+				DATA: {
+					type: ArgumentType.LIST,
 				},
 			},
 		},
@@ -3560,6 +3658,19 @@ texSubImage3D*/
 				},
 				Z: {
 					type: ArgumentType.NUMBER,
+				},
+			},
+		},
+		{
+			glfn: "vertexAttrib3fv",
+			category: Category.ATTRIBUTES,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				INDEX: {
+					type: ArgumentType.NUMBER,
+				},
+				DATA: {
+					type: ArgumentType.LIST,
 				},
 			},
 		},
@@ -3586,10 +3697,27 @@ texSubImage3D*/
 			},
 		},
 		{
-			glfn: "vertexAttribI4i",
+			glfn: "vertexAttrib4fv",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.COMMAND,
 			arguments: {
+				INDEX: {
+					type: ArgumentType.NUMBER,
+				},
+				DATA: {
+					type: ArgumentType.LIST,
+				},
+			},
+		},
+		{
+			glfn: "vertexAttribI4$",
+			category: Category.ATTRIBUTES,
+			blockType: BlockType.COMMAND,
+			arguments: {
+				ATTRIBUTE: {
+					type: ArgumentType.STRING,
+					menu: "iui",
+				},
 				INDEX: {
 					type: ArgumentType.NUMBER,
 				},
@@ -3608,24 +3736,19 @@ texSubImage3D*/
 			},
 		},
 		{
-			glfn: "vertexAttribI4ui",
+			glfn: "vertexAttribI4$v",
 			category: Category.ATTRIBUTES,
 			blockType: BlockType.COMMAND,
 			arguments: {
+				ATTRIBUTE: {
+					type: ArgumentType.STRING,
+					menu: "iui",
+				},
 				INDEX: {
 					type: ArgumentType.NUMBER,
 				},
-				X: {
-					type: ArgumentType.NUMBER,
-				},
-				Y: {
-					type: ArgumentType.NUMBER,
-				},
-				Z: {
-					type: ArgumentType.NUMBER,
-				},
-				W: {
-					type: ArgumentType.NUMBER,
+				DATA: {
+					type: ArgumentType.LIST,
 				},
 			},
 		},
@@ -3677,73 +3800,6 @@ texSubImage3D*/
 		},
 	]
 
-	function alertUnimplemented() {
-		let def = {
-			makeXRCompatible: true,
-			uniform1f: true,
-			uniform1fv: true,
-			uniform1i: true,
-			uniform1iv: true,
-			uniform1uiv: true,
-			uniform2f: true,
-			uniform2fv: true,
-			uniform2i: true,
-			uniform2iv: true,
-			uniform2uiv: true,
-			uniform3f: true,
-			uniform3fv: true,
-			uniform3i: true,
-			uniform3iv: true,
-			uniform3uiv: true,
-			uniform4f: true,
-			uniform4fv: true,
-			uniform4i: true,
-			uniform4iv: true,
-			uniform4uiv: true,
-			uniformMatrix2fv: true,
-			uniformMatrix2x3fv: true,
-			uniformMatrix2x4fv: true,
-			uniformMatrix3fv: true,
-			uniformMatrix3x2fv: true,
-			uniformMatrix3x4fv: true,
-			uniformMatrix4fv: true,
-			uniformMatrix4x2fv: true,
-			uniformMatrix4x3fv: true,
-			vertexAttrib1fv: true,
-			vertexAttrib2fv: true,
-			vertexAttrib3fv: true,
-			vertexAttrib4fv: true,
-			vertexAttribI4iv: true,
-			vertexAttribI4uiv: true,
-			uniform1ui: true,
-			uniform2ui: true,
-			uniform3ui: true,
-			uniform4ui: true,
-			isBuffer: true,
-			isFramebuffer: true,
-			isProgram: true,
-			isQuery: true,
-			isRenderbuffer: true,
-			isSampler: true,
-			isShader: true,
-			isSync: true,
-			isTexture: true,
-			isTransformFeedback: true,
-			isVertexArray: true,
-			bufferData: true,
-			bufferSubData: true,
-			getUniform: true,
-		};
-		for(let i=0; i<definitions.length; i++) {
-			def[definitions[i].opcode || definitions[i].glfn] = true;
-		}
-		let out = [];
-		for(let i in gl) {
-			if(!def[i] && typeof gl[i] == "function") out.push(i);
-		}
-		console.warn(out.join("\n")+"\nleft: "+out.length+"\ndone: "+definitions.length);
-	}
-	alertUnimplemented();
 
 
 
@@ -3795,7 +3851,8 @@ texSubImage3D*/
 						items: ["alpha", "antialias", "depth", "failIfMajorPerformanceCaveat", "powerPreference", "premultipliedAlpha", "preserveDrawingBuffer",
 							"stencil", "desynchronized"],
 					},
-					uniform: ["f","i","ui"],
+					iui: ["i", "ui"],
+					uniform: ["f", "i", "ui"],
 					uniformMatrix: ["2", "2x3", "2x4", "3", "3x2", "3x4", "4", "4x2", "4x3"],
 					activeInfo: ["name", "size", "type"],
 					allConsts: {
@@ -3971,16 +4028,47 @@ texSubImage3D*/
 		}
 	}
 
+	function alertUnimplemented() {
+		const def = {
+			makeXRCompatible: true,
+		};
+		for (let i=0; i<definitions.length; i++) {
+			const block = definitions[i];
+			if (block === "---") continue;
+			let name = block.opcode || block.glfn;
+			if (name.includes("-")) name = name.split("-")[0];
+			if (name.includes("$")) {
+				const menuName = Object.values(block.arguments)[0].menu;
+				
+				let menuItems = extInfo.menus[menuName];
+				if (menuItems.items) menuItems = menuItems.items;
+				if (!Array.isArray(menuItems)) throw new Error("invalid menu");
+				menuItems = menuItems.map(e => (typeof e == "object") ? e.value : e);
+				
+				for(const item of menuItems) {
+					def[name.replace("$", item)] = true;
+				}
+			} else {
+				def[name] = true;
+			}
+		}
+		const out = [];
+		for (let i in gl) {
+			if (!def[i] && typeof gl[i] == "function") out.push(i);
+		}
+		console.warn(`${out.join("\n")}\nleft: ${out.length}\ndone: ${definitions.length}`);
+	}
+	alertUnimplemented();
 
 
 	// Debug console log
 	const ogl = gl;
 	gl = {}
-	for(let i in ogl) {
-		if(typeof ogl[i] == "function") {
+	for (let i in ogl) {
+		if (typeof ogl[i] == "function") {
 			gl[i] = function(...args) {
 				let res = ogl[i](...args);
-				if(res === undefined) {
+				if (res === undefined) {
 					console.log("gl."+i+"(",...args,")");
 				} else {
 					console.log("gl."+i+"(",...args,") =>",res);
@@ -3988,7 +4076,7 @@ texSubImage3D*/
 				return res;
 			}
 		}
-		if(typeof ogl[i] == "number") {
+		if (typeof ogl[i] == "number") {
 			gl[i] = ogl[i];
 		}
 	}
