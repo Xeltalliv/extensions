@@ -809,6 +809,9 @@
         gl.deleteVertexArray(this.vao);
         this.vao = null;
       }
+      for (const otherMesh of this.dependants) {
+        otherMesh.deleteVao();
+      }
     }
     destroy() {
       for (let name in this.myBuffers) {
@@ -824,7 +827,9 @@
       for (const otherMesh of this.dependants) {
         otherMesh.update();
       }
-      this.deleteVao();
+      if (this.vao) {
+        gl.deleteVertexArray(this.vao);
+      }
       //TODO: continue
     }
   }
