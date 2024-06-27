@@ -603,6 +603,7 @@
   class Mesh {
     constructor(name) {
       this.name = name;
+      this.vao = null;
       this.buffers = {};
       this.myBuffers = {};
       this.data = {};
@@ -2735,6 +2736,11 @@ void main() {
         gl.useProgram(program.program);
 
         // TODO: replace the following slow monstrosity with fast VAOs
+        if (mesh.vao) {
+          gl.bindVertexArray(mesh.vao);
+        } else {
+          gl.bindVertexArray(mesh.vao = gl.createVertexArray());
+
         if (mesh.buffers.indices) {
           gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.buffers.indices.buffer);
         }
@@ -2882,6 +2888,7 @@ void main() {
             0
           );
           gl.vertexAttribDivisor(program.aloc.a_instanceUV, 1);
+        }
         }
 
         const blending = mesh.data.blending ?? "default";
