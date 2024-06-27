@@ -614,6 +614,8 @@
       this.uploadUsage = gl.STATIC_DRAW;
       this.dependants = new Set();
       this.dependencies = new Set();
+      this.flagsArray = [];
+      this.flagsString = "";
     }
     update() {
       const buffers = {};
@@ -805,6 +807,7 @@
         );
         gl.vertexAttribDivisor(Locations.a_instanceUV, 1);
       }
+      this.updateFlags();
     }
     deleteVao() {
       if (this.vao) {
@@ -833,6 +836,50 @@
       this.lengthsMismatch = mismatch;
       for (const otherMesh of this.dependants) {
         otherMesh.checkLengths();
+      }
+    }
+    updateFlags() {
+      const mesh = this;
+      const flags = [];
+
+      // Buffer related flags
+      if (mesh.buffers.colors) flags.push("COLORS");
+      if (mesh.buffers.texCoords)
+        flags.push(`TEXTURES ${mesh.buffers.texCoords.size}`);
+      if (mesh.buffers.boneIndices && mesh.bonesDiff) {
+        flags.push(`SKINNING ${mesh.buffers.boneIndices.size}`);
+        flags.push(`BONE_COUNT ${mesh.bonesDiff.length / 16}`);
+      }
+      if (mesh.buffers.instanceTransforms) {
+        flags.push("INSTANCING");
+        if (mesh.buffers.instanceTransforms.size <= 3)
+          flags.push("INSTANCE_POS");
+        if (mesh.buffers.instanceTransforms.size == 4)
+          flags.push("INSTANCE_POS_SCALE");
+        if (mesh.buffers.instanceTransforms.size == 16)
+          flags.push("INSTANCE_MATRIX");
+      }
+      if (mesh.buffers.instanceColors) flags.push("INSTANCE_COLOR");
+      if (mesh.buffers.instanceUVOffsets)
+        flags.push(
+          mesh.buffers.instanceUVOffsets.size == 4
+            ? "INSTANCE_UVS"
+            : "INSTANCE_UV"
+        );
+
+      // Data related flags
+      if (mesh.data.useCentroidInterpolation)
+        flags.push("INTERPOLATION centroid");
+      if (mesh.data.alphaTest > 0) flags.push("ALPHATEST");
+      if (mesh.data.makeOpaque) flags.push("MAKE_OPAQUE");
+      if (mesh.data.billboarding) flags.push("BILLBOARD");
+      if (mesh.data.uvOffset) flags.push("UV_OFFSET");
+
+      this.flagsArray = flags;
+      this.flagsString = flags.join("|");
+
+      for (const otherMesh of this.dependants) {
+        otherMesh.updateFlags();
       }
     }
     destroy() {
@@ -1474,12 +1521,20 @@ void main() {
     constructor() {
       this.programs = {};
     }
-    get(flags) {
+    getOld(flags) {
       const key = flags.join("-");
       let program = this.programs[key];
       if (program) return program;
       program = compileProgram(flags);
       this.programs[key] = program;
+      return program;
+    }
+    get(flagsString) {
+      return this.programs[flagsString];
+    }
+    create(flagsString, flagsArray) {
+      const program = compileProgram(flagsArray);
+      this.programs[flagsString] = program;
       return program;
     }
     clear() {
@@ -1691,6 +1746,18 @@ void main() {
       );
     }
   }
+  function updateGlobalFlags() {
+    const flags = [];
+    if (fogEnabled) {
+      flags.push("FOG");
+      if (fogSpace == "view space") flags.push("FOG_IN_VIEW_SPACE");
+      if (fogSpace == "world space") flags.push("FOG_IN_WORLD_SPACE");
+      if (fogSpace == "model space") flags.push("FOG_IN_MODEL_SPACE");
+      if (fogPosition) flags.push("FOG_POS");
+    }
+    globalFlagsArray = flags;
+    globalFlagsString = flags.join("|");
+  }
 
   if (!Scratch.extensions.unsandboxed)
     throw new Error("Simple 3D extension must be run unsandboxed");
@@ -1788,6 +1855,8 @@ void main() {
   let currentCulling;
   let currentCullingProps;
   let lastTextMeasurement;
+  let globalFlagsArray;
+  let globalFlagsString;
 
   function resetEverything() {
     gl.clearColor(0, 0, 0, 0);
@@ -1817,6 +1886,8 @@ void main() {
     currentCulling = 0;
     currentCullingProps = [null, null];
     lastTextMeasurement = null;
+    globalFlagsArray = [];
+    globalFlagsString = "";
     for (const mesh of meshes.values()) {
       mesh.destroy();
     }
@@ -2501,6 +2572,7 @@ void main() {
         }
         mesh.bonesDiff = diff.flat();
         mesh.update();
+        mesh.updateFlags();
       },
     },
     {
@@ -2753,6 +2825,7 @@ void main() {
         mesh.myData.alphaTest = alphaTest;
         mesh.myData.makeOpaque = makeOpaque;
         mesh.update();
+        mesh.updateFlags();
       },
     },
     {
@@ -2775,6 +2848,7 @@ void main() {
         if (!mesh) return;
         mesh.myData.billboarding = billboarding;
         mesh.update();
+        mesh.updateFlags();
       },
     },
     {
@@ -2797,6 +2871,7 @@ void main() {
         if (!mesh) return;
         mesh.myData.useCentroidInterpolation = useCentroid;
         mesh.update();
+        mesh.updateFlags();
       },
     },
     {
@@ -2847,6 +2922,7 @@ void main() {
         if (!mesh) return;
         mesh.myData.uvOffset = [Cast.toNumber(U), Cast.toNumber(V)];
         mesh.update();
+        mesh.updateFlags();
       },
     },
     {
@@ -2870,53 +2946,16 @@ void main() {
         if (mesh.lengthsMismatch) return;
         const length = mesh.buffers.position.length;
 
-        // TODO: keep list of per mesh flags, list of global flags, and simply concatenate them here
-        let flags = [];
-        if (mesh.buffers.colors) flags.push("COLORS");
-        if (mesh.buffers.texCoords)
-          flags.push(`TEXTURES ${mesh.buffers.texCoords.size}`);
-        if (fogEnabled) {
-          flags.push("FOG");
-          if (fogSpace == "view space") flags.push("FOG_IN_VIEW_SPACE");
-          if (fogSpace == "world space") flags.push("FOG_IN_WORLD_SPACE");
-          if (fogSpace == "model space") flags.push("FOG_IN_MODEL_SPACE");
-          if (fogPosition) flags.push("FOG_POS");
-        }
-        if (mesh.buffers.boneIndices && mesh.bonesDiff) {
-          flags.push(`SKINNING ${mesh.buffers.boneIndices.size}`);
-          flags.push(`BONE_COUNT ${mesh.bonesDiff.length / 16}`);
-        }
-        if (mesh.data.useCentroidInterpolation)
-          flags.push("INTERPOLATION centroid");
-        if (mesh.data.alphaTest > 0) flags.push("ALPHATEST");
-        if (mesh.data.makeOpaque) flags.push("MAKE_OPAQUE");
-        if (mesh.data.billboarding) flags.push("BILLBOARD");
-        if (mesh.data.uvOffset) flags.push("UV_OFFSET");
-        if (mesh.buffers.instanceTransforms) {
-          flags.push("INSTANCING");
-          if (mesh.buffers.instanceTransforms.size <= 3)
-            flags.push("INSTANCE_POS");
-          if (mesh.buffers.instanceTransforms.size == 4)
-            flags.push("INSTANCE_POS_SCALE");
-          if (mesh.buffers.instanceTransforms.size == 16)
-            flags.push("INSTANCE_MATRIX");
-        }
-        if (mesh.buffers.instanceColors) flags.push("INSTANCE_COLOR");
-        if (mesh.buffers.instanceUVOffsets)
-          flags.push(
-            mesh.buffers.instanceUVOffsets.size == 4
-              ? "INSTANCE_UVS"
-              : "INSTANCE_UV"
-          );
-        const program = programs.get(flags);
-        if (!program.program) return;
-        gl.useProgram(program.program);
-
         if (mesh.vao) {
           gl.bindVertexArray(mesh.vao);
         } else {
           mesh.createVao();
         }
+
+        let program = programs.get(globalFlagsString+"|"+mesh.flagsString);
+        if (!program) program = programs.create(globalFlagsString+"|"+mesh.flagsString, [...globalFlagsArray, ...mesh.flagsArray]);
+        if (!program.program) return;
+        gl.useProgram(program.program);
 
         const blending = mesh.data.blending ?? "default";
         if (blending !== currentBlending) {
@@ -4085,6 +4124,7 @@ void main() {
       },
       def: function ({ STATE }) {
         fogEnabled = Cast.toBoolean(STATE);
+        updateGlobalFlags();
       },
     },
     {
@@ -4161,6 +4201,7 @@ void main() {
         fogPosition = [Cast.toNumber(X), Cast.toNumber(Y), Cast.toNumber(Z)];
         if (fogPosition[0] == 0 && fogPosition[1] == 0 && fogPosition[2] == 0)
           fogPosition = null;
+        updateGlobalFlags();
       },
     },
     {
