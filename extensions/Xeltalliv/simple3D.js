@@ -604,6 +604,8 @@
     constructor(name) {
       this.name = name;
       this.vao = null;
+      this.lengthsMismatch = true;
+      this.lengthsDirty = true;
       this.buffers = {};
       this.myBuffers = {};
       this.data = {};
@@ -811,6 +813,26 @@
       }
       for (const otherMesh of this.dependants) {
         otherMesh.deleteVao();
+      }
+    }
+    checkLengths() {
+      let length = -1;
+      let lengthIns = -1;
+      let mismatch = !this.buffers.position || this.buffers.position.length == 0;
+      for (const name in this.buffers) {
+        const buffer = this.buffers[name];
+        if (buffer.type == 0) {
+          if (length == -1) length = buffer.length;
+          else if (length !== buffer.length) mismatch = true;
+        } else if (buffer.type == 1) {
+          if (lengthIns == -1) lengthIns = buffer.length;
+          else if (lengthIns !== buffer.length) mismatch = true;
+        }
+      }
+      this.lengthsDirty = false;
+      this.lengthsMismatch = mismatch;
+      for (const otherMesh of this.dependants) {
+        otherMesh.checkLengths();
       }
     }
     destroy() {
@@ -1646,6 +1668,7 @@ void main() {
       const buffer =
         mesh.myBuffers[name] ?? (mesh.myBuffers[name] = new Buffer(type));
       if (buffer.size !== size || buffer.bytesPerEl !== value.BYTES_PER_ELEMENT) mesh.deleteVao();
+      if (buffer.length !== value.length / size) mesh.lengthsDirty = true;
       gl.bindBuffer(target, buffer.buffer);
       gl.bufferData(target, value, mesh.uploadUsage);
       buffer.size = size;
@@ -2842,23 +2865,10 @@ void main() {
         if (!mesh) return;
         if (!currentRenderTarget.checkIfValid()) return;
         if (currentRenderTarget.getMesh() == mesh) return;
-        if (!mesh.buffers.position) return;
-        if (mesh.buffers.position.length == 0) return;
 
-        // TODO: only recompute this after one or more buffers were changed
-        let length = -1;
-        let lengthIns = -1;
-        for (const name in mesh.buffers) {
-          const buffer = mesh.buffers[name];
-          if (buffer.type == 0) {
-            if (length == -1) length = buffer.length;
-            else if (length !== buffer.length) return;
-          } else if (buffer.type == 1) {
-            if (lengthIns == -1) lengthIns = buffer.length;
-            else if (lengthIns !== buffer.length) return;
-          }
-        }
-        if (length == -1) return;
+        if (mesh.lengthsDirty) mesh.checkLengths();
+        if (mesh.lengthsMismatch) return;
+        const length = mesh.buffers.position.length;
 
         // TODO: keep list of per mesh flags, list of global flags, and simply concatenate them here
         let flags = [];
