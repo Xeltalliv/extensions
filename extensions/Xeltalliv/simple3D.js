@@ -1005,6 +1005,16 @@
 
     publicApi.redraw = redraw;
   }
+  const Locations = {
+    a_position: 0,
+    a_color: 1,
+    a_uv: 2,
+    a_index: 3,
+    a_weight: 4,
+    a_instanceTransform: 5,
+    a_instanceColor: 9,
+    a_instanceUV: 10
+  }
   const vshSrc = `
 precision highp float;
 
@@ -1012,48 +1022,48 @@ precision highp float;
 #define INTERPOLATION
 #endif
 
-in vec4 a_position;
+layout (location=${Locations.a_position}) in vec4 a_position;
 #ifdef COLORS
-in vec4 a_color;
+layout (location=${Locations.a_color}) in vec4 a_color;
 #endif
 #ifdef TEXTURES
 #if TEXTURES == 2
-in vec2 a_uv;
+layout (location=${Locations.a_uv}) in vec2 a_uv;
 #elif TEXTURES == 3
-in vec3 a_uv;
+layout (location=${Locations.a_uv}) in vec3 a_uv;
 #endif
 #endif
 #ifdef SKINNING
 #if SKINNING == 1
-in float a_index;
+layout (location=${Locations.a_index}) in float a_index;
 #elif SKINNING == 2
-in vec2 a_index;
-in vec2 a_weight;
+layout (location=${Locations.a_index}) in vec2 a_index;
+layout (location=${Locations.a_weight}) in vec2 a_weight;
 #elif SKINNING == 3
-in vec3 a_index;
-in vec3 a_weight;
+layout (location=${Locations.a_index}) in vec3 a_index;
+layout (location=${Locations.a_weight}) in vec3 a_weight;
 #elif SKINNING == 4
-in vec4 a_index;
-in vec4 a_weight;
+layout (location=${Locations.a_index}) in vec4 a_index;
+layout (location=${Locations.a_weight}) in vec4 a_weight;
 #endif
 #endif
 #ifdef INSTANCE_POS
-in vec3 a_instanceTransform;
+layout (location=${Locations.a_instanceTransform}) in vec3 a_instanceTransform;
 #endif
 #ifdef INSTANCE_POS_SCALE
-in vec4 a_instanceTransform;
+layout (location=${Locations.a_instanceTransform}) in vec4 a_instanceTransform;
 #endif
 #ifdef INSTANCE_MATRIX
-in mat4 a_instanceTransform;
+layout (location=${Locations.a_instanceTransform}) in mat4 a_instanceTransform;
 #endif
 #ifdef INSTANCE_COLOR
-in vec4 a_instanceColor;
+layout (location=${Locations.a_instanceColor}) in vec4 a_instanceColor;
 #endif
 #ifdef INSTANCE_UV
-in vec2 a_instanceUV;
+layout (location=${Locations.a_instanceUV}) in vec2 a_instanceUV;
 #endif
 #ifdef INSTANCE_UVS
-in vec4 a_instanceUV;
+layout (location=${Locations.a_instanceUV}) in vec4 a_instanceUV;
 #endif
 
 INTERPOLATION out vec4 v_color;
@@ -1229,6 +1239,7 @@ void main() {
   outColor = color;
 }
 `;
+  console.log(vshSrc, fshSrc);
   function compileProgram(flags) {
     console.log("Compiling program with flags:", flags);
     const defines =
