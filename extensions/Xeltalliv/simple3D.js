@@ -2935,7 +2935,7 @@ void main() {
           defaultValue: "my mesh",
         },
       },
-      def: function ({ NAME }, util) {
+      def: function ({ NAME }) {
         NAME = Cast.toString(NAME);
         const mesh = meshes.get(NAME);
         if (!mesh) return;
@@ -2946,11 +2946,8 @@ void main() {
         if (mesh.lengthsMismatch) return;
         const length = mesh.buffers.position.length;
 
-        if (mesh.vao) {
-          gl.bindVertexArray(mesh.vao);
-        } else {
-          mesh.createVao();
-        }
+        if (!mesh.vao) mesh.createVao();
+        gl.bindVertexArray(mesh.vao);
 
         let program = programs.get(globalFlagsString+"|"+mesh.flagsString);
         if (!program) program = programs.create(globalFlagsString+"|"+mesh.flagsString, [...globalFlagsArray, ...mesh.flagsArray]);
@@ -3567,7 +3564,7 @@ void main() {
           menu: "externalTransforms",
         },
       },
-      def: function ({ SOURCE }, util) {
+      def: function ({ SOURCE }) {
         if (!hasOwn(externalTransforms, SOURCE)) return;
         const src = externalTransforms[SOURCE];
         transforms[selectedTransform] = src.get() ?? m4.identity();
