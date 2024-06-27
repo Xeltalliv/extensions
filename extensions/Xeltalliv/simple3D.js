@@ -651,6 +651,165 @@
       if (length == -1) return false;
       return true;
     }
+    createVao() {
+      const mesh = this;
+      gl.bindVertexArray(mesh.vao = gl.createVertexArray());
+
+      if (mesh.buffers.indices) {
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.buffers.indices.buffer);
+      }
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.position.buffer);
+      gl.enableVertexAttribArray(Locations.a_position);
+      gl.vertexAttribPointer(
+        Locations.a_position,
+        mesh.buffers.position.size,
+        gl.FLOAT,
+        false,
+        0,
+        0
+      );
+
+      if (mesh.buffers.colors) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.colors.buffer);
+        gl.enableVertexAttribArray(Locations.a_color);
+        gl.vertexAttribPointer(
+          Locations.a_color,
+          mesh.buffers.colors.size,
+          gl.UNSIGNED_BYTE,
+          true,
+          0,
+          0
+        );
+      }
+      if (mesh.buffers.texCoords) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.texCoords.buffer);
+        gl.enableVertexAttribArray(Locations.a_uv);
+        gl.vertexAttribPointer(
+          Locations.a_uv,
+          mesh.buffers.texCoords.size,
+          gl.FLOAT,
+          false,
+          0,
+          0
+        );
+      }
+      if (mesh.buffers.boneIndices) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.boneIndices.buffer);
+        gl.enableVertexAttribArray(Locations.a_index);
+        gl.vertexAttribPointer(
+          Locations.a_index,
+          mesh.buffers.boneIndices.size,
+          gl.BYTE,
+          false,
+          0,
+          0
+        );
+      }
+      if (mesh.buffers.boneWeights) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.boneWeights.buffer);
+        gl.enableVertexAttribArray(Locations.a_weight);
+        gl.vertexAttribPointer(
+          Locations.a_weight,
+          mesh.buffers.boneWeights.size,
+          gl.UNSIGNED_SHORT,
+          true,
+          0,
+          0
+        );
+      }
+      if (mesh.buffers.instanceTransforms) {
+        gl.bindBuffer(
+          gl.ARRAY_BUFFER,
+          mesh.buffers.instanceTransforms.buffer
+        );
+        if (mesh.buffers.instanceTransforms.size == 16) {
+          gl.enableVertexAttribArray(Locations.a_instanceTransform);
+          gl.enableVertexAttribArray(Locations.a_instanceTransform + 1);
+          gl.enableVertexAttribArray(Locations.a_instanceTransform + 2);
+          gl.enableVertexAttribArray(Locations.a_instanceTransform + 3);
+          gl.vertexAttribPointer(
+            Locations.a_instanceTransform,
+            4,
+            gl.FLOAT,
+            false,
+            64,
+            0
+          );
+          gl.vertexAttribPointer(
+            Locations.a_instanceTransform + 1,
+            4,
+            gl.FLOAT,
+            false,
+            64,
+            16
+          );
+          gl.vertexAttribPointer(
+            Locations.a_instanceTransform + 2,
+            4,
+            gl.FLOAT,
+            false,
+            64,
+            32
+          );
+          gl.vertexAttribPointer(
+            Locations.a_instanceTransform + 3,
+            4,
+            gl.FLOAT,
+            false,
+            64,
+            48
+          );
+          gl.vertexAttribDivisor(Locations.a_instanceTransform, 1);
+          gl.vertexAttribDivisor(Locations.a_instanceTransform + 1, 1);
+          gl.vertexAttribDivisor(Locations.a_instanceTransform + 2, 1);
+          gl.vertexAttribDivisor(Locations.a_instanceTransform + 3, 1);
+        } else {
+          gl.enableVertexAttribArray(Locations.a_instanceTransform);
+          gl.vertexAttribPointer(
+            Locations.a_instanceTransform,
+            mesh.buffers.instanceTransforms.size,
+            gl.FLOAT,
+            false,
+            0,
+            0
+          );
+          gl.vertexAttribDivisor(Locations.a_instanceTransform, 1);
+        }
+      }
+      if (mesh.buffers.instanceColors) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.instanceColors.buffer);
+        gl.enableVertexAttribArray(Locations.a_instanceColor);
+        gl.vertexAttribPointer(
+          Locations.a_instanceColor,
+          mesh.buffers.instanceColors.size,
+          gl.FLOAT,
+          false,
+          0,
+          0
+        );
+        gl.vertexAttribDivisor(Locations.a_instanceColor, 1);
+      }
+      if (mesh.buffers.instanceUVOffsets) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.instanceUVOffsets.buffer);
+        gl.enableVertexAttribArray(Locations.a_instanceUV);
+        gl.vertexAttribPointer(
+          Locations.a_instanceUV,
+          mesh.buffers.instanceUVOffsets.size,
+          gl.FLOAT,
+          false,
+          0,
+          0
+        );
+        gl.vertexAttribDivisor(Locations.a_instanceUV, 1);
+      }
+    }
+    deleteVao() {
+      if (this.vao) {
+        gl.deleteVertexArray(this.vao);
+        this.vao = null;
+      }
+    }
     destroy() {
       for (let name in this.myBuffers) {
         this.myBuffers[name].destroy();
@@ -665,6 +824,7 @@
       for (const otherMesh of this.dependants) {
         otherMesh.update();
       }
+      this.deleteVao();
       //TODO: continue
     }
   }
@@ -1480,6 +1640,7 @@ void main() {
     if (mesh.uploadOffset < 0) {
       const buffer =
         mesh.myBuffers[name] ?? (mesh.myBuffers[name] = new Buffer(type));
+      if (buffer.size !== size || buffer.bytesPerEl !== value.BYTES_PER_ELEMENT) mesh.deleteVao();
       gl.bindBuffer(target, buffer.buffer);
       gl.bufferData(target, value, mesh.uploadUsage);
       buffer.size = size;
@@ -2735,160 +2896,10 @@ void main() {
         if (!program.program) return;
         gl.useProgram(program.program);
 
-        // TODO: replace the following slow monstrosity with fast VAOs
         if (mesh.vao) {
           gl.bindVertexArray(mesh.vao);
         } else {
-          gl.bindVertexArray(mesh.vao = gl.createVertexArray());
-
-        if (mesh.buffers.indices) {
-          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.buffers.indices.buffer);
-        }
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.position.buffer);
-        gl.enableVertexAttribArray(program.aloc.a_position);
-        gl.vertexAttribPointer(
-          program.aloc.a_position,
-          mesh.buffers.position.size,
-          gl.FLOAT,
-          false,
-          0,
-          0
-        );
-
-        if (mesh.buffers.colors) {
-          gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.colors.buffer);
-          gl.enableVertexAttribArray(program.aloc.a_color);
-          gl.vertexAttribPointer(
-            program.aloc.a_color,
-            mesh.buffers.colors.size,
-            gl.UNSIGNED_BYTE,
-            true,
-            0,
-            0
-          );
-        }
-        if (mesh.buffers.texCoords) {
-          gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.texCoords.buffer);
-          gl.enableVertexAttribArray(program.aloc.a_uv);
-          gl.vertexAttribPointer(
-            program.aloc.a_uv,
-            mesh.buffers.texCoords.size,
-            gl.FLOAT,
-            false,
-            0,
-            0
-          );
-        }
-        if (mesh.buffers.boneIndices) {
-          gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.boneIndices.buffer);
-          gl.enableVertexAttribArray(program.aloc.a_index);
-          gl.vertexAttribPointer(
-            program.aloc.a_index,
-            mesh.buffers.boneIndices.size,
-            gl.BYTE,
-            false,
-            0,
-            0
-          );
-        }
-        if (mesh.buffers.boneWeights) {
-          gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.boneWeights.buffer);
-          gl.enableVertexAttribArray(program.aloc.a_weight);
-          gl.vertexAttribPointer(
-            program.aloc.a_weight,
-            mesh.buffers.boneWeights.size,
-            gl.UNSIGNED_SHORT,
-            true,
-            0,
-            0
-          );
-        }
-        if (mesh.buffers.instanceTransforms) {
-          gl.bindBuffer(
-            gl.ARRAY_BUFFER,
-            mesh.buffers.instanceTransforms.buffer
-          );
-          if (mesh.buffers.instanceTransforms.size == 16) {
-            gl.enableVertexAttribArray(program.aloc.a_instanceTransform);
-            gl.enableVertexAttribArray(program.aloc.a_instanceTransform + 1);
-            gl.enableVertexAttribArray(program.aloc.a_instanceTransform + 2);
-            gl.enableVertexAttribArray(program.aloc.a_instanceTransform + 3);
-            gl.vertexAttribPointer(
-              program.aloc.a_instanceTransform,
-              4,
-              gl.FLOAT,
-              false,
-              64,
-              0
-            );
-            gl.vertexAttribPointer(
-              program.aloc.a_instanceTransform + 1,
-              4,
-              gl.FLOAT,
-              false,
-              64,
-              16
-            );
-            gl.vertexAttribPointer(
-              program.aloc.a_instanceTransform + 2,
-              4,
-              gl.FLOAT,
-              false,
-              64,
-              32
-            );
-            gl.vertexAttribPointer(
-              program.aloc.a_instanceTransform + 3,
-              4,
-              gl.FLOAT,
-              false,
-              64,
-              48
-            );
-            gl.vertexAttribDivisor(program.aloc.a_instanceTransform, 1);
-            gl.vertexAttribDivisor(program.aloc.a_instanceTransform + 1, 1);
-            gl.vertexAttribDivisor(program.aloc.a_instanceTransform + 2, 1);
-            gl.vertexAttribDivisor(program.aloc.a_instanceTransform + 3, 1);
-          } else {
-            gl.enableVertexAttribArray(program.aloc.a_instanceTransform);
-            gl.vertexAttribPointer(
-              program.aloc.a_instanceTransform,
-              mesh.buffers.instanceTransforms.size,
-              gl.FLOAT,
-              false,
-              0,
-              0
-            );
-            gl.vertexAttribDivisor(program.aloc.a_instanceTransform, 1);
-          }
-        }
-        if (mesh.buffers.instanceColors) {
-          gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.instanceColors.buffer);
-          gl.enableVertexAttribArray(program.aloc.a_instanceColor);
-          gl.vertexAttribPointer(
-            program.aloc.a_instanceColor,
-            mesh.buffers.instanceColors.size,
-            gl.FLOAT,
-            false,
-            0,
-            0
-          );
-          gl.vertexAttribDivisor(program.aloc.a_instanceColor, 1);
-        }
-        if (mesh.buffers.instanceUVOffsets) {
-          gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffers.instanceUVOffsets.buffer);
-          gl.enableVertexAttribArray(program.aloc.a_instanceUV);
-          gl.vertexAttribPointer(
-            program.aloc.a_instanceUV,
-            mesh.buffers.instanceUVOffsets.size,
-            gl.FLOAT,
-            false,
-            0,
-            0
-          );
-          gl.vertexAttribDivisor(program.aloc.a_instanceUV, 1);
-        }
+          mesh.createVao();
         }
 
         const blending = mesh.data.blending ?? "default";
@@ -3025,42 +3036,6 @@ void main() {
         }
         renderer.dirty = true; //TODO: only do this when rendering to
         runtime.requestRedraw(); //TODO: main canvas, not to framebuffers
-
-        if (mesh.buffers.colors) {
-          gl.disableVertexAttribArray(program.aloc.a_color);
-        }
-        if (mesh.buffers.texCoords) {
-          gl.disableVertexAttribArray(program.aloc.a_uv);
-        }
-        if (mesh.buffers.boneIndices) {
-          gl.disableVertexAttribArray(program.aloc.a_index);
-        }
-        if (mesh.buffers.boneWeights) {
-          gl.disableVertexAttribArray(program.aloc.a_weight);
-        }
-        if (mesh.buffers.instanceTransforms) {
-          if (mesh.buffers.instanceTransforms.size == 16) {
-            gl.disableVertexAttribArray(program.aloc.a_instanceTransform);
-            gl.disableVertexAttribArray(program.aloc.a_instanceTransform + 1);
-            gl.disableVertexAttribArray(program.aloc.a_instanceTransform + 2);
-            gl.disableVertexAttribArray(program.aloc.a_instanceTransform + 3);
-            gl.vertexAttribDivisor(program.aloc.a_instanceTransform, 0);
-            gl.vertexAttribDivisor(program.aloc.a_instanceTransform + 1, 0);
-            gl.vertexAttribDivisor(program.aloc.a_instanceTransform + 2, 0);
-            gl.vertexAttribDivisor(program.aloc.a_instanceTransform + 3, 0);
-          } else {
-            gl.disableVertexAttribArray(program.aloc.a_instanceTransform);
-            gl.vertexAttribDivisor(program.aloc.a_instanceTransform, 0);
-          }
-        }
-        if (mesh.buffers.instanceColors) {
-          gl.disableVertexAttribArray(program.aloc.a_instanceColor);
-          gl.vertexAttribDivisor(program.aloc.a_instanceColor, 0);
-        }
-        if (mesh.buffers.instanceUVOffsets) {
-          gl.disableVertexAttribArray(program.aloc.a_instanceUV);
-          gl.vertexAttribDivisor(program.aloc.a_instanceUV, 0);
-        }
       },
     },
     {
