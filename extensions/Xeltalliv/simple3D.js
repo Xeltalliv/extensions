@@ -263,8 +263,8 @@
   class Buffer {
     constructor(type) {
       this.buffer = gl.createBuffer();
-      this.bytesPerEl = 1;
-      this.size = 1;
+      this.bytesPerEl = 0;
+      this.size = 0;
       this.length = 0;
       this.type = type;
     }
@@ -2838,6 +2838,7 @@ void main() {
         if (!currentRenderTarget.checkIfValid()) return;
         if (currentRenderTarget.getMesh() == mesh) return;
         if (!mesh.buffers.position) return;
+        if (mesh.buffers.position.length == 0) return;
 
         // TODO: only recompute this after one or more buffers were changed
         let length = -1;
