@@ -1311,9 +1311,13 @@ INTERPOLATION out vec3 v_uv;
 #endif
 INTERPOLATION out vec3 v_viewpos;
 
-uniform Global {
+uniform MatProj {
   highp mat4 u_projection;
+};
+uniform MatView {
   highp mat4 u_view;
+};
+uniform MatWorld {
   highp mat4 u_model;
 };
 uniform vec4 u_color_mul;
@@ -1451,11 +1455,6 @@ uniform samplerCube u_texture;
 #endif
 #endif
 
-uniform Global {
-  highp mat4 u_projection;
-  highp mat4 u_view;
-  highp mat4 u_model;
-};
 uniform vec4 u_color_mul;
 uniform vec4 u_color_add;
 uniform vec3 u_fog_color;
@@ -1551,8 +1550,9 @@ void main() {
     create(flagsString, flagsArray) {
       const program = compileProgram(flagsArray);
       this.programs[flagsString] = program;
-      const globalIndex = gl.getUniformBlockIndex(program.program, "Global");
-      gl.uniformBlockBinding(program.program, globalIndex, 0);
+      gl.uniformBlockBinding(program.program, 0, 0);
+      gl.uniformBlockBinding(program.program, 1, 1);
+      gl.uniformBlockBinding(program.program, 2, 2);
       return program;
     }
     clear() {
@@ -1588,14 +1588,18 @@ void main() {
     };
     return texture;
   }
-  function createGlobalUniformBuffer() {
-    const blockSize = 4 * 4 * 4 * 3;
-    const uboBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.UNIFORM_BUFFER, uboBuffer);
-    gl.bufferData(gl.UNIFORM_BUFFER, blockSize, gl.DYNAMIC_DRAW);
+  function createGlobalUniformBuffers() {
+    const blockSize = 4 * 4 * 4;
+    const uboBuffers = [];
+    for(let i=0; i<3; i++) {
+      const uboBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.UNIFORM_BUFFER, uboBuffer);
+      gl.bufferData(gl.UNIFORM_BUFFER, blockSize, gl.DYNAMIC_DRAW);
+      gl.bindBufferBase(gl.UNIFORM_BUFFER, i, uboBuffer);
+      uboBuffers.push(uboBuffer);
+    }
     gl.bindBuffer(gl.UNIFORM_BUFFER, null);
-    gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, uboBuffer);
-    return uboBuffer;
+    return uboBuffers;
   }
   // requireNonPackagedRuntime by LilyMakesThings
   function requireNonPackagedRuntime(blockName) {
@@ -1785,6 +1789,26 @@ void main() {
     globalFlagsArray = flags;
     globalFlagsString = flags.join("|");
   }
+  function toFloat32Array(b) {
+    const a = transformF32;
+    a[0] = b[0];
+    a[1] = b[1];
+    a[2] = b[2];
+    a[3] = b[3];
+    a[4] = b[4];
+    a[5] = b[5];
+    a[6] = b[6];
+    a[7] = b[7];
+    a[8] = b[8];
+    a[9] = b[9];
+    a[10] = b[10];
+    a[11] = b[11];
+    a[12] = b[12];
+    a[13] = b[13];
+    a[14] = b[14];
+    a[15] = b[15];
+    return a;
+  }
 
   if (!Scratch.extensions.unsandboxed)
     throw new Error("Simple 3D extension must be run unsandboxed");
@@ -1855,7 +1879,7 @@ void main() {
     "color and depth": gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT,
   };
   const texture = getDefaultTexture();
-  const globalUniformBuffer = createGlobalUniformBuffer();
+  const globalUniformBuffers = createGlobalUniformBuffers();
   const meshes = new Map();
   const programs = new ProgramManager();
   const modelDecoder = new ModelDecoder();
@@ -1866,6 +1890,7 @@ void main() {
   const canvasRenderTarget = new CanvasRenderTarget();
 
   let currentRenderTarget;
+  let transformF32 = new Float32Array(16);
   let transforms;
   let transformsUsed;
   let transformed;
@@ -2969,7 +2994,7 @@ void main() {
           defaultValue: "my mesh",
         },
       },
-      def: function ({ NAME }) {
+      def2: function ({ NAME }) {
         NAME = Cast.toString(NAME);
         const mesh = meshes.get(NAME);
         if (!mesh) return;
@@ -3050,35 +3075,34 @@ void main() {
           gl.uniform2fv(program.uloc.u_uvOffset, mesh.data.uvOffset);
         }
 
-        gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffer);
         if (transforms.viewToProjected !== transformsUsed.viewToProjected) {
+          gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[0]);
           transformsUsed.viewToProjected = transforms.viewToProjected;
-          gl.bufferSubData(
+          gl.bufferData(
             gl.UNIFORM_BUFFER,
-            0,
-            new Float32Array(transforms.viewToProjected),
-            0
+            toFloat32Array(transforms.viewToProjected),
+            gl.STREAM_DRAW
           );
         }
         if (transforms.worldToView !== transformsUsed.worldToView) {
+          gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[1]);
           transformsUsed.worldToView = transforms.worldToView;
-          gl.bufferSubData(
+          gl.bufferData(
             gl.UNIFORM_BUFFER,
-            64,
-            new Float32Array(transforms.worldToView),
-            0
+            toFloat32Array(transforms.worldToView),
+            gl.STREAM_DRAW
           );
         }
         if (transforms.modelToWorld !== transformsUsed.modelToWorld) {
+          gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[2]);
           transformsUsed.modelToWorld = transforms.modelToWorld;
-          gl.bufferSubData(
+          gl.bufferData(
             gl.UNIFORM_BUFFER,
-            128,
-            new Float32Array(transforms.modelToWorld),
-            0
+            toFloat32Array(transforms.modelToWorld),
+            gl.STREAM_DRAW
           );
         }
-        gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+        //gl.bindBuffer(gl.UNIFORM_BUFFER, null);
 
         let start = 0;
         let amount = mesh.buffers.indices
@@ -4539,7 +4563,7 @@ void main() {
 
   for (let block of definitions) {
     if (block == "---") continue;
-    Extension.prototype[block.opcode ?? block.func] = block.def;
+    Extension.prototype[block.opcode ?? block.func] = block.def ?? block.def2;
   }
 
   // WebGL call logger for debugging.
