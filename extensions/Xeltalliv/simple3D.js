@@ -1311,14 +1311,22 @@ INTERPOLATION out vec3 v_uv;
 #endif
 INTERPOLATION out vec3 v_viewpos;
 
-uniform mat4 u_projection;
-uniform mat4 u_view;
-uniform mat4 u_model;
+uniform Global {
+  highp mat4 u_projection;
+  highp mat4 u_view;
+  highp mat4 u_model;
+};
+uniform vec4 u_color_mul;
+uniform vec4 u_color_add;
+uniform vec3 u_fog_color;
+uniform vec2 u_fog_dist;
+uniform vec3 u_fog_position;
+uniform vec2 u_uvOffset;
+uniform float u_alpha_threshold;
+
 #ifdef BONE_COUNT
 uniform mat4 u_bones[BONE_COUNT];
 #endif
-uniform vec2 u_uvOffset;
-uniform vec3 u_fog_position;
 
 void main() {
   vec4 pos = a_position;
@@ -1442,10 +1450,18 @@ uniform sampler2D u_texture;
 uniform samplerCube u_texture;
 #endif
 #endif
+
+uniform Global {
+  highp mat4 u_projection;
+  highp mat4 u_view;
+  highp mat4 u_model;
+};
 uniform vec4 u_color_mul;
 uniform vec4 u_color_add;
 uniform vec3 u_fog_color;
 uniform vec2 u_fog_dist;
+uniform vec3 u_fog_position;
+uniform vec2 u_uvOffset;
 uniform float u_alpha_threshold;
 
 void main() {
@@ -1535,6 +1551,8 @@ void main() {
     create(flagsString, flagsArray) {
       const program = compileProgram(flagsArray);
       this.programs[flagsString] = program;
+      const globalIndex = gl.getUniformBlockIndex(program.program, "Global");
+      gl.uniformBlockBinding(program.program, globalIndex, 0);
       return program;
     }
     clear() {
@@ -1569,6 +1587,15 @@ void main() {
       );
     };
     return texture;
+  }
+  function createGlobalUniformBuffer() {
+    const blockSize = 4 * 4 * 4 * 3;
+    const uboBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.UNIFORM_BUFFER, uboBuffer);
+    gl.bufferData(gl.UNIFORM_BUFFER, blockSize, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+    gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, uboBuffer);
+    return uboBuffer;
   }
   // requireNonPackagedRuntime by LilyMakesThings
   function requireNonPackagedRuntime(blockName) {
@@ -1828,6 +1855,7 @@ void main() {
     "color and depth": gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT,
   };
   const texture = getDefaultTexture();
+  const globalUniformBuffer = createGlobalUniformBuffer();
   const meshes = new Map();
   const programs = new ProgramManager();
   const modelDecoder = new ModelDecoder();
@@ -2989,12 +3017,12 @@ void main() {
         }
 
         if (mesh.buffers.texCoords) {
-          gl.activeTexture(gl.TEXTURE0);
+          //gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(
             mesh.data.texture?.target ?? gl.TEXTURE_2D,
             mesh.data.texture?.texture ?? texture
           );
-          gl.uniform1i(program.uloc.u_texture, 0);
+          //gl.uniform1i(program.uloc.u_texture, 0);
         }
 
         gl.uniform4fv(program.uloc.u_color_mul, colorMultiplier);
@@ -3016,17 +3044,26 @@ void main() {
           gl.uniform2fv(program.uloc.u_uvOffset, mesh.data.uvOffset);
         }
 
-        gl.uniformMatrix4fv(
-          program.uloc.u_projection,
-          false,
-          transforms.viewToProjected
+        gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffer);
+        gl.bufferSubData(
+          gl.UNIFORM_BUFFER,
+          0,
+          new Float32Array(transforms.viewToProjected),
+          0
         );
-        gl.uniformMatrix4fv(program.uloc.u_view, false, transforms.worldToView);
-        gl.uniformMatrix4fv(
-          program.uloc.u_model,
-          false,
-          transforms.modelToWorld
+        gl.bufferSubData(
+          gl.UNIFORM_BUFFER,
+          64,
+          new Float32Array(transforms.worldToView),
+          0
         );
+        gl.bufferSubData(
+          gl.UNIFORM_BUFFER,
+          128,
+          new Float32Array(transforms.modelToWorld),
+          0
+        );
+        gl.bindBuffer(gl.UNIFORM_BUFFER, null);
 
         let start = 0;
         let amount = mesh.buffers.indices
