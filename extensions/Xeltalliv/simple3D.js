@@ -1867,6 +1867,7 @@ void main() {
 
   let currentRenderTarget;
   let transforms;
+  let transformsUsed;
   let transformed;
   let selectedTransform;
   let colorMultiplier;
@@ -1897,6 +1898,11 @@ void main() {
       viewToProjected: m4.identity(),
       import: m4.identity(),
       custom: m4.identity(),
+    };
+    transformsUsed = {
+      modelToWorld: null,
+      worldToView: null,
+      viewToProjected: null,
     };
     transformed = [0, 0, 0, 0];
     selectedTransform = "viewToProjected";
@@ -3045,24 +3051,33 @@ void main() {
         }
 
         gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffer);
-        gl.bufferSubData(
-          gl.UNIFORM_BUFFER,
-          0,
-          new Float32Array(transforms.viewToProjected),
-          0
-        );
-        gl.bufferSubData(
-          gl.UNIFORM_BUFFER,
-          64,
-          new Float32Array(transforms.worldToView),
-          0
-        );
-        gl.bufferSubData(
-          gl.UNIFORM_BUFFER,
-          128,
-          new Float32Array(transforms.modelToWorld),
-          0
-        );
+        if (transforms.viewToProjected !== transformsUsed.viewToProjected) {
+          transformsUsed.viewToProjected = transforms.viewToProjected;
+          gl.bufferSubData(
+            gl.UNIFORM_BUFFER,
+            0,
+            new Float32Array(transforms.viewToProjected),
+            0
+          );
+        }
+        if (transforms.worldToView !== transformsUsed.worldToView) {
+          transformsUsed.worldToView = transforms.worldToView;
+          gl.bufferSubData(
+            gl.UNIFORM_BUFFER,
+            64,
+            new Float32Array(transforms.worldToView),
+            0
+          );
+        }
+        if (transforms.modelToWorld !== transformsUsed.modelToWorld) {
+          transformsUsed.modelToWorld = transforms.modelToWorld;
+          gl.bufferSubData(
+            gl.UNIFORM_BUFFER,
+            128,
+            new Float32Array(transforms.modelToWorld),
+            0
+          );
+        }
         gl.bindBuffer(gl.UNIFORM_BUFFER, null);
 
         let start = 0;
