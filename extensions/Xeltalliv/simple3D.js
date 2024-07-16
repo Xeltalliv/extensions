@@ -662,6 +662,8 @@
       this.dependencies = new Set();
       this.flagsArray = [];
       this.flagsString = "";
+      this.glFn = null;
+      this.glArgs = [];
     }
     update() {
       const buffers = {};
@@ -882,6 +884,75 @@
       this.lengthsMismatch = mismatch;
       for (const otherMesh of this.dependants) {
         otherMesh.checkLengths();
+      }
+    }
+    updateGlCall() {
+      const data = this.data, buffers = this.buffers;
+      const length = buffers.position.length;
+      let start = 0;
+      let amount = buffers.indices
+        ? buffers.indices.length
+        : length;
+      if (data.drawRange) {
+        const size = buffers.indices
+          ? buffers.indices.bytesPerEl
+          : 1;
+        start = data.drawRange[0] * size;
+        const end = Math.min(
+          data.drawRange[0] + data.drawRange[1],
+          amount
+        );
+        amount = end - data.drawRange[0];
+      }
+      if (buffers.instanceTransforms) {
+        if (buffers.indices) {
+          const indexTypes = [
+            null,
+            gl.UNSIGNED_BYTE,
+            gl.UNSIGNED_SHORT,
+            null,
+            gl.UNSIGNED_INT,
+          ];
+          this.glFn = gl.drawElementsInstanced;
+          this.glArgs = [
+            data.primitives ?? gl.TRIANGLES,
+            amount,
+            indexTypes[buffers.indices.bytesPerEl],
+            start,
+            buffers.instanceTransforms.length
+          ];
+        } else {
+          this.glFn = gl.drawArraysInstanced;
+          this.glArgs = [
+            data.primitives ?? gl.TRIANGLES,
+            start,
+            amount,
+            buffers.instanceTransforms.length
+          ];
+        }
+      } else {
+        if (buffers.indices) {
+          const indexTypes = [
+            null,
+            gl.UNSIGNED_BYTE,
+            gl.UNSIGNED_SHORT,
+            null,
+            gl.UNSIGNED_INT,
+          ];
+          this.glFn = gl.drawElements;
+          this.glArgs = [
+            data.primitives ?? gl.TRIANGLES,
+            amount,
+            indexTypes[buffers.indices.bytesPerEl],
+            start
+          ];
+        } else {
+          this.glFn = gl.drawArrays;
+          this.glArgs = [data.primitives ?? gl.TRIANGLES, start, amount];
+        }
+      }
+      for (const otherMesh of this.dependants) {
+        otherMesh.updateGlCall();
       }
     }
     updateFlags() {
@@ -3060,6 +3131,7 @@ void main() {
         if (!mesh) return;
         mesh.myData.drawRange = [start, Math.max(0, end - start)];
         mesh.update();
+        mesh.glfn
       },
     },
     {
@@ -3103,9 +3175,11 @@ void main() {
           currentRenderTarget.getMesh() === mesh) return;
         const data = mesh.data, buffers = mesh.buffers;
 
-        if (mesh.lengthsDirty) mesh.checkLengths();
+        if (mesh.lengthsDirty) {
+          mesh.checkLengths();
+          mesh.updateGlCall();
+        }
         if (mesh.lengthsMismatch) return;
-        const length = buffers.position.length;
 
         if (mesh.vao === null) mesh.createVao();
         gl.bindVertexArray(mesh.vao);
@@ -3206,66 +3280,9 @@ void main() {
             gl.STREAM_DRAW
           );
         }
-        //gl.bindBuffer(gl.UNIFORM_BUFFER, null);
 
-        let start = 0;
-        let amount = buffers.indices
-          ? buffers.indices.length
-          : length;
-        if (data.drawRange) {
-          const size = buffers.indices
-            ? buffers.indices.bytesPerEl
-            : 1;
-          start = data.drawRange[0] * size;
-          const end = Math.min(
-            data.drawRange[0] + data.drawRange[1],
-            amount
-          );
-          amount = end - data.drawRange[0];
-        }
-        if (buffers.instanceTransforms) {
-          if (buffers.indices) {
-            const indexTypes = [
-              null,
-              gl.UNSIGNED_BYTE,
-              gl.UNSIGNED_SHORT,
-              null,
-              gl.UNSIGNED_INT,
-            ];
-            gl.drawElementsInstanced(
-              data.primitives ?? gl.TRIANGLES,
-              amount,
-              indexTypes[buffers.indices.bytesPerEl],
-              start,
-              buffers.instanceTransforms.length
-            );
-          } else {
-            gl.drawArraysInstanced(
-              data.primitives ?? gl.TRIANGLES,
-              start,
-              amount,
-              buffers.instanceTransforms.length
-            );
-          }
-        } else {
-          if (buffers.indices) {
-            const indexTypes = [
-              null,
-              gl.UNSIGNED_BYTE,
-              gl.UNSIGNED_SHORT,
-              null,
-              gl.UNSIGNED_INT,
-            ];
-            gl.drawElements(
-              data.primitives ?? gl.TRIANGLES,
-              amount,
-              indexTypes[buffers.indices.bytesPerEl],
-              start
-            );
-          } else {
-            gl.drawArrays(data.primitives ?? gl.TRIANGLES, start, amount);
-          }
-        }
+        mesh.glFn.apply(gl, mesh.glArgs);
+
         renderer.dirty = true; //TODO: only do this when rendering to
         runtime.requestRedraw(); //TODO: main canvas, not to framebuffers
       },
