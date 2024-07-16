@@ -1320,11 +1320,14 @@ uniform MatView {
 uniform MatWorld {
   highp mat4 u_model;
 };
-uniform vec4 u_color_mul;
-uniform vec4 u_color_add;
-uniform vec3 u_fog_color;
-uniform vec2 u_fog_dist;
-uniform vec3 u_fog_position;
+uniform Global {
+  highp vec4 u_color_mul;
+  highp vec4 u_color_add;
+  highp vec3 u_fog_color;
+  highp float u_fog_dist_min;
+  highp vec3 u_fog_position;
+  highp float u_fog_dist_diff;
+};
 uniform vec2 u_uvOffset;
 uniform float u_alpha_threshold;
 
@@ -1455,11 +1458,23 @@ uniform samplerCube u_texture;
 #endif
 #endif
 
-uniform vec4 u_color_mul;
-uniform vec4 u_color_add;
-uniform vec3 u_fog_color;
-uniform vec2 u_fog_dist;
-uniform vec3 u_fog_position;
+uniform MatProj {
+  highp mat4 u_projection;
+};
+uniform MatView {
+  highp mat4 u_view;
+};
+uniform MatWorld {
+  highp mat4 u_model;
+};
+uniform Global {
+  highp vec4 u_color_mul;
+  highp vec4 u_color_add;
+  highp vec3 u_fog_color;
+  highp float u_fog_dist_min;
+  highp vec3 u_fog_position;
+  highp float u_fog_dist_diff;
+};
 uniform vec2 u_uvOffset;
 uniform float u_alpha_threshold;
 
@@ -1481,7 +1496,7 @@ void main() {
 #endif
   color = color * u_color_mul + u_color_add;
 #ifdef FOG
-  float fog = (length(v_viewpos) - u_fog_dist.x) / u_fog_dist.y;
+  float fog = (length(v_viewpos) - u_fog_dist_min) / u_fog_dist_diff;
   color.rgb = mix(color.rgb, u_fog_color, clamp(fog, 0.0, 1.0));
 #endif
   color.a = clamp(color.a, 0.0, 1.0);
@@ -1550,9 +1565,12 @@ void main() {
     create(flagsString, flagsArray) {
       const program = compileProgram(flagsArray);
       this.programs[flagsString] = program;
-      gl.uniformBlockBinding(program.program, 0, 0);
-      gl.uniformBlockBinding(program.program, 1, 1);
-      gl.uniformBlockBinding(program.program, 2, 2);
+      if (program.program) {
+        gl.uniformBlockBinding(program.program, 0, 0);
+        gl.uniformBlockBinding(program.program, 1, 1);
+        gl.uniformBlockBinding(program.program, 2, 2);
+        gl.uniformBlockBinding(program.program, 3, 3);
+      }
       return program;
     }
     clear() {
@@ -1589,17 +1607,51 @@ void main() {
     return texture;
   }
   function createGlobalUniformBuffers() {
-    const blockSize = 4 * 4 * 4;
+    const f32 = 4;
+    const blockSizes = [
+      4 * 4 * f32,
+      4 * 4 * f32,
+      4 * 4 * f32,
+      4 * 4 * f32,
+    ];
     const uboBuffers = [];
-    for(let i=0; i<3; i++) {
+    for(let i=0; i<blockSizes.length; i++) {
       const uboBuffer = gl.createBuffer();
       gl.bindBuffer(gl.UNIFORM_BUFFER, uboBuffer);
-      gl.bufferData(gl.UNIFORM_BUFFER, blockSize, gl.DYNAMIC_DRAW);
+      gl.bufferData(gl.UNIFORM_BUFFER, blockSizes[i], gl.DYNAMIC_DRAW);
       gl.bindBufferBase(gl.UNIFORM_BUFFER, i, uboBuffer);
       uboBuffers.push(uboBuffer);
     }
     gl.bindBuffer(gl.UNIFORM_BUFFER, null);
     return uboBuffers;
+  }
+  function updateTintUBO() {
+    const a = transformF32X8;
+    a[0] = colorMultiplier[0];
+    a[1] = colorMultiplier[1];
+    a[2] = colorMultiplier[2];
+    a[3] = colorMultiplier[3];
+    a[4] = colorAdder[0];
+    a[5] = colorAdder[1];
+    a[6] = colorAdder[2];
+    a[7] = colorAdder[3];
+    gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[3]);
+    gl.bufferSubData(gl.UNIFORM_BUFFER, 0, a);
+  }
+  function updateFogUBO() {
+    const a = transformF32X8;
+    a[0] = fogColor[0];
+    a[1] = fogColor[1];
+    a[2] = fogColor[2];
+    a[3] = fogDistance[0];
+    if (fogPosition) {
+      a[4] = fogPosition[0];
+      a[5] = fogPosition[1];
+      a[6] = fogPosition[2];
+    }
+    a[7] = fogDistance[1];
+    gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[3]);
+    gl.bufferSubData(gl.UNIFORM_BUFFER, 32, a); // 8 * 4 = 32
   }
   // requireNonPackagedRuntime by LilyMakesThings
   function requireNonPackagedRuntime(blockName) {
@@ -1790,7 +1842,7 @@ void main() {
     globalFlagsString = flags.join("|");
   }
   function toFloat32Array(b) {
-    const a = transformF32;
+    const a = transformF32X16;
     a[0] = b[0];
     a[1] = b[1];
     a[2] = b[2];
@@ -1891,7 +1943,8 @@ void main() {
 
   let currentRenderTarget;
   let gub;
-  let transformF32 = new Float32Array(16);
+  let transformF32X8 = new Float32Array(8);
+  let transformF32X16 = new Float32Array(16);
   let transforms;
   let transformsUsed;
   let transformed;
@@ -1934,11 +1987,13 @@ void main() {
     selectedTransform = "viewToProjected";
     colorMultiplier = [1, 1, 1, 1];
     colorAdder = [0, 0, 0, 0];
+    updateTintUBO();
     fogColor = [1, 1, 1];
     fogDistance = [10, 90];
     fogEnabled = false;
     fogPosition = null;
     fogSpace = "view space";
+    updateFogUBO();
     imageSource = null;
     imageSourceSync = null;
     currentBlending = "unset";
@@ -4194,6 +4249,7 @@ void main() {
         ];
         if (OPERATION == "multiplier") colorMultiplier = color;
         if (OPERATION == "adder") colorAdder = color;
+        updateTintUBO();
       },
     },
     {
@@ -4235,6 +4291,7 @@ void main() {
           Cast.toNumber(GREEN),
           Cast.toNumber(BLUE),
         ];
+        updateFogUBO();
       },
     },
     {
@@ -4255,6 +4312,7 @@ void main() {
         NEAR = Cast.toNumber(NEAR);
         FAR = Cast.toNumber(FAR);
         fogDistance = [NEAR, FAR - NEAR];
+        updateFogUBO();
       },
     },
     {
@@ -4286,6 +4344,7 @@ void main() {
         if (fogPosition[0] == 0 && fogPosition[1] == 0 && fogPosition[2] == 0)
           fogPosition = null;
         updateGlobalFlags();
+        updateFogUBO();
       },
     },
     {
