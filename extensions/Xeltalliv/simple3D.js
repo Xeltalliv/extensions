@@ -3472,7 +3472,7 @@ void main() {
         },
         NEAR: {
           type: ArgumentType.NUMBER,
-          defaultValue: 0.01,
+          defaultValue: 0.1,
         },
         FAR: {
           type: ArgumentType.NUMBER,
@@ -3495,7 +3495,7 @@ void main() {
       arguments: {
         NEAR: {
           type: ArgumentType.NUMBER,
-          defaultValue: 0.01,
+          defaultValue: 0.1,
         },
         FAR: {
           type: ArgumentType.NUMBER,
