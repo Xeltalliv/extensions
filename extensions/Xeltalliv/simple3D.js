@@ -3,7 +3,7 @@
 // Description: Make GPU accelerated 3D projects easily.
 // By: Vadik1 <https://scratch.mit.edu/users/Vadik1/>
 // License: MPL-2.0 AND BSD-3-Clause
-// Version: 1.0.4
+// Version: 1.0.5
 
 (function (Scratch) {
   "use strict";
@@ -989,6 +989,7 @@
     const skin = new SimpleSkin(skinId, renderer);
     renderer._allSkins[skinId] = skin;
     const drawableId = renderer.createDrawable("simple3D");
+    renderer._allDrawables[drawableId].customDrawableName = "Simple3D Layer";
     renderer.updateDrawableSkinId(drawableId, skinId);
     redraw();
 
