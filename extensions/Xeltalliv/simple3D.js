@@ -1890,6 +1890,7 @@ void main() {
   const canvasRenderTarget = new CanvasRenderTarget();
 
   let currentRenderTarget;
+  let gub;
   let transformF32 = new Float32Array(16);
   let transforms;
   let transformsUsed;
@@ -2995,25 +2996,25 @@ void main() {
         },
       },
       def2: function ({ NAME }) {
-        NAME = Cast.toString(NAME);
-        const mesh = meshes.get(NAME);
-        if (!mesh) return;
-        if (!currentRenderTarget.checkIfValid()) return;
-        if (currentRenderTarget.getMesh() == mesh) return;
+        const mesh = meshes.get(Cast.toString(NAME));
+        if (mesh === undefined ||
+          currentRenderTarget.checkIfValid() === false ||
+          currentRenderTarget.getMesh() === mesh) return;
+        const data = mesh.data, buffers = mesh.buffers;
 
         if (mesh.lengthsDirty) mesh.checkLengths();
         if (mesh.lengthsMismatch) return;
-        const length = mesh.buffers.position.length;
+        const length = buffers.position.length;
 
-        if (!mesh.vao) mesh.createVao();
+        if (mesh.vao === null) mesh.createVao();
         gl.bindVertexArray(mesh.vao);
 
         let program = programs.get(globalFlagsString+"|"+mesh.flagsString);
-        if (!program) program = programs.create(globalFlagsString+"|"+mesh.flagsString, [...globalFlagsArray, ...mesh.flagsArray]);
-        if (!program.program) return;
+        if (program === undefined) program = programs.create(globalFlagsString+"|"+mesh.flagsString, [...globalFlagsArray, ...mesh.flagsArray]);
+        if (program.program === undefined) return;
         gl.useProgram(program.program);
 
-        const blending = mesh.data.blending ?? "default";
+        const blending = data.blending ?? "default";
         if (blending !== currentBlending) {
           currentBlending = blending;
           const props = Blendings[blending];
@@ -3030,7 +3031,7 @@ void main() {
             }
           }
         }
-        const culling = mesh.data.culling ?? "nothing";
+        const culling = data.culling ?? "nothing";
         if (culling !== currentCulling) {
           currentCulling = culling;
           const props = Cullings[culling];
@@ -3047,11 +3048,11 @@ void main() {
           }
         }
 
-        if (mesh.buffers.texCoords) {
+        if (buffers.texCoords) {
           //gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(
-            mesh.data.texture?.target ?? gl.TEXTURE_2D,
-            mesh.data.texture?.texture ?? texture
+            data.texture?.target ?? gl.TEXTURE_2D,
+            data.texture?.texture ?? texture
           );
           //gl.uniform1i(program.uloc.u_texture, 0);
         }
@@ -3064,63 +3065,73 @@ void main() {
           if (fogPosition)
             gl.uniform3fv(program.uloc.u_fog_position, fogPosition);
         }
-        if (mesh.data.alphaTest > 0) {
+        if (data.alphaTest > 0) {
           gl.uniform1f(program.uloc.u_alpha_threshold, mesh.data.alphaTest);
         }
 
         if (mesh.bonesDiff) {
           gl.uniformMatrix4fv(program.uloc.u_bones, false, mesh.bonesDiff);
         }
-        if (mesh.data.uvOffset) {
+        if (data.uvOffset) {
           gl.uniform2fv(program.uloc.u_uvOffset, mesh.data.uvOffset);
         }
 
-        if (transforms.viewToProjected !== transformsUsed.viewToProjected) {
-          gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[0]);
-          transformsUsed.viewToProjected = transforms.viewToProjected;
+        const t = transforms, tu = transformsUsed;
+        if (t.viewToProjected !== tu.viewToProjected) {
+          if (gub !== 0) {
+            gub = 0;
+            gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[0]);
+          }
+          tu.viewToProjected = t.viewToProjected;
           gl.bufferData(
             gl.UNIFORM_BUFFER,
-            toFloat32Array(transforms.viewToProjected),
+            toFloat32Array(t.viewToProjected),
             gl.STREAM_DRAW
           );
         }
-        if (transforms.worldToView !== transformsUsed.worldToView) {
-          gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[1]);
-          transformsUsed.worldToView = transforms.worldToView;
+        if (t.worldToView !== tu.worldToView) {
+          if (gub !== 1) {
+            gub = 1;
+            gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[1]);
+          }
+          tu.worldToView = t.worldToView;
           gl.bufferData(
             gl.UNIFORM_BUFFER,
-            toFloat32Array(transforms.worldToView),
+            toFloat32Array(t.worldToView),
             gl.STREAM_DRAW
           );
         }
-        if (transforms.modelToWorld !== transformsUsed.modelToWorld) {
-          gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[2]);
-          transformsUsed.modelToWorld = transforms.modelToWorld;
+        if (t.modelToWorld !== tu.modelToWorld) {
+          if (gub !== 2) {
+            gub = 2;
+            gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[2]);
+          }
+          tu.modelToWorld = t.modelToWorld;
           gl.bufferData(
             gl.UNIFORM_BUFFER,
-            toFloat32Array(transforms.modelToWorld),
+            toFloat32Array(t.modelToWorld),
             gl.STREAM_DRAW
           );
         }
         //gl.bindBuffer(gl.UNIFORM_BUFFER, null);
 
         let start = 0;
-        let amount = mesh.buffers.indices
-          ? mesh.buffers.indices.length
+        let amount = buffers.indices
+          ? buffers.indices.length
           : length;
-        if (mesh.data.drawRange) {
-          const size = mesh.buffers.indices
-            ? mesh.buffers.indices.bytesPerEl
+        if (data.drawRange) {
+          const size = buffers.indices
+            ? buffers.indices.bytesPerEl
             : 1;
-          start = mesh.data.drawRange[0] * size;
+          start = data.drawRange[0] * size;
           const end = Math.min(
-            mesh.data.drawRange[0] + mesh.data.drawRange[1],
+            data.drawRange[0] + data.drawRange[1],
             amount
           );
-          amount = end - mesh.data.drawRange[0];
+          amount = end - data.drawRange[0];
         }
-        if (mesh.buffers.instanceTransforms) {
-          if (mesh.buffers.indices) {
+        if (buffers.instanceTransforms) {
+          if (buffers.indices) {
             const indexTypes = [
               null,
               gl.UNSIGNED_BYTE,
@@ -3129,22 +3140,22 @@ void main() {
               gl.UNSIGNED_INT,
             ];
             gl.drawElementsInstanced(
-              mesh.data.primitives ?? gl.TRIANGLES,
+              data.primitives ?? gl.TRIANGLES,
               amount,
-              indexTypes[mesh.buffers.indices.bytesPerEl],
+              indexTypes[buffers.indices.bytesPerEl],
               start,
-              mesh.buffers.instanceTransforms.length
+              buffers.instanceTransforms.length
             );
           } else {
             gl.drawArraysInstanced(
-              mesh.data.primitives ?? gl.TRIANGLES,
+              data.primitives ?? gl.TRIANGLES,
               start,
               amount,
-              mesh.buffers.instanceTransforms.length
+              buffers.instanceTransforms.length
             );
           }
         } else {
-          if (mesh.buffers.indices) {
+          if (buffers.indices) {
             const indexTypes = [
               null,
               gl.UNSIGNED_BYTE,
@@ -3153,13 +3164,13 @@ void main() {
               gl.UNSIGNED_INT,
             ];
             gl.drawElements(
-              mesh.data.primitives ?? gl.TRIANGLES,
+              data.primitives ?? gl.TRIANGLES,
               amount,
-              indexTypes[mesh.buffers.indices.bytesPerEl],
+              indexTypes[buffers.indices.bytesPerEl],
               start
             );
           } else {
-            gl.drawArrays(mesh.data.primitives ?? gl.TRIANGLES, start, amount);
+            gl.drawArrays(data.primitives ?? gl.TRIANGLES, start, amount);
           }
         }
         renderer.dirty = true; //TODO: only do this when rendering to
