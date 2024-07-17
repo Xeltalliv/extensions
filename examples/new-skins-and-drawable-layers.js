@@ -88,7 +88,7 @@
 	//    where it would've been if there was one.
 
 	// So now we need to descibe the newly added drawable group.
-	// Since groupIndex is corrected later, it can be set to anything,
+	// Since groupIndex is corrected later, it can be set to anything
 	// here, in this case 0.
 	// Since there are no drawables in this group yet, the drawListOffset
 	// can be taken from the next one. If the next group doesn't have any
@@ -99,7 +99,7 @@
 		drawListOffset: renderer._layerGroups[DRAW_BEFORE].drawListOffset,
 	};
 
-	// Also inserting new value into renderer._groupOrdering means that,
+	// Also inserting new value into renderer._groupOrdering means that
 	// many of the groupIndexes within renderer._layerGroups are no longer
 	// correct and need to be shifted. Instead of figuring out which ones
 	// need to be shifted, it's easier to just recalucated all of them.
