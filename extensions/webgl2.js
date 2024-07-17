@@ -211,6 +211,7 @@
 	skinId = renderer._nextSkinId++;
 	renderer._allSkins[skinId] = skin = new SimpleSkin(skinId, renderer);
 	drawableId = renderer.createDrawable("webgl2"); // TODO change to "webgl"
+	renderer._allDrawables[drawableId].customDrawableName = "WebGL2 Layer"; // for SharkPool's Layer Control extension
 	renderer.updateDrawableSkinId(drawableId, skinId);
 	redraw();
 
