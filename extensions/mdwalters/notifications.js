@@ -18,7 +18,7 @@
       }
 
       const allowedByBrowser = await Notification.requestPermission();
-      if (!allowedByBrowser) {
+      if (allowedByBrowser === "denied") {
         throw new Error("Denied by browser");
       }
 
@@ -59,7 +59,7 @@
           {
             opcode: "hasPermission",
             blockType: Scratch.BlockType.BOOLEAN,
-            text: Scratch.translate("has notification permission"),
+            text: Scratch.translate("has notification permission?"),
             disableMonitor: true,
           },
           {
