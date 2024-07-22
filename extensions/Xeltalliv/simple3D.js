@@ -1428,16 +1428,10 @@ INTERPOLATION out vec3 v_uv;
 #endif
 INTERPOLATION out vec3 v_viewpos;
 
-uniform MatProj {
-  highp mat4 u_projection;
-};
-uniform MatView {
-  highp mat4 u_view;
-};
-uniform MatWorld {
-  highp mat4 u_model;
-};
 uniform Global {
+  highp mat4 u_projection;
+  highp mat4 u_view;
+  highp mat4 u_model;
   highp vec4 u_color_mul;
   highp vec4 u_color_add;
   highp vec3 u_fog_color;
@@ -1575,16 +1569,10 @@ uniform samplerCube u_texture;
 #endif
 #endif
 
-uniform MatProj {
-  highp mat4 u_projection;
-};
-uniform MatView {
-  highp mat4 u_view;
-};
-uniform MatWorld {
-  highp mat4 u_model;
-};
 uniform Global {
+  highp mat4 u_projection;
+  highp mat4 u_view;
+  highp mat4 u_model;
   highp vec4 u_color_mul;
   highp vec4 u_color_add;
   highp vec3 u_fog_color;
@@ -1684,9 +1672,6 @@ void main() {
       this.programs[flagsString] = program;
       if (program.program) {
         gl.uniformBlockBinding(program.program, 0, 0);
-        gl.uniformBlockBinding(program.program, 1, 1);
-        gl.uniformBlockBinding(program.program, 2, 2);
-        gl.uniformBlockBinding(program.program, 3, 3);
       }
       return program;
     }
@@ -1726,10 +1711,7 @@ void main() {
   function createGlobalUniformBuffers() {
     const f32 = 4;
     const blockSizes = [
-      4 * 4 * f32,
-      4 * 4 * f32,
-      4 * 4 * f32,
-      4 * 4 * f32,
+      4 * 4 * 4 * f32,
     ];
     const uboBuffers = [];
     for(let i=0; i<blockSizes.length; i++) {
@@ -1752,8 +1734,8 @@ void main() {
     a[5] = colorAdder[1];
     a[6] = colorAdder[2];
     a[7] = colorAdder[3];
-    gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[3]);
-    gl.bufferSubData(gl.UNIFORM_BUFFER, 0, a);
+    gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[0]);
+    gl.bufferSubData(gl.UNIFORM_BUFFER, 192, a); // 64 * 3 + 0
   }
   function updateFogUBO() {
     const a = transformF32X8;
@@ -1767,8 +1749,8 @@ void main() {
       a[6] = fogPosition[2];
     }
     a[7] = fogDistance[1];
-    gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[3]);
-    gl.bufferSubData(gl.UNIFORM_BUFFER, 32, a); // 8 * 4 = 32
+    gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[0]);
+    gl.bufferSubData(gl.UNIFORM_BUFFER, 224, a); // 64 * 3 + 4 * 4 * 2 = 192 + 32 = 224
   }
   // requireNonPackagedRuntime by LilyMakesThings
   function requireNonPackagedRuntime(blockName) {
@@ -2059,7 +2041,6 @@ void main() {
   const canvasRenderTarget = new CanvasRenderTarget();
 
   let currentRenderTarget;
-  let gub;
   let transformF32X8 = new Float32Array(8);
   let transformF32X16 = new Float32Array(16);
   let transforms;
@@ -3243,42 +3224,19 @@ void main() {
           gl.uniform2fv(program.uloc.u_uvOffset, mesh.data.uvOffset);
         }
 
+        gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[0]);
         const t = transforms, tu = transformsUsed;
         if (t.viewToProjected !== tu.viewToProjected) {
-          if (gub !== 0) {
-            gub = 0;
-            gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[0]);
-          }
           tu.viewToProjected = t.viewToProjected;
-          gl.bufferData(
-            gl.UNIFORM_BUFFER,
-            toFloat32Array(t.viewToProjected),
-            gl.STREAM_DRAW
-          );
+          gl.bufferSubData(gl.UNIFORM_BUFFER, 0, toFloat32Array(t.viewToProjected)); // 64 * 0 = 0
         }
         if (t.worldToView !== tu.worldToView) {
-          if (gub !== 1) {
-            gub = 1;
-            gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[1]);
-          }
           tu.worldToView = t.worldToView;
-          gl.bufferData(
-            gl.UNIFORM_BUFFER,
-            toFloat32Array(t.worldToView),
-            gl.STREAM_DRAW
-          );
+          gl.bufferSubData(gl.UNIFORM_BUFFER, 64, toFloat32Array(t.worldToView)); // 64 * 1 = 64
         }
         if (t.modelToWorld !== tu.modelToWorld) {
-          if (gub !== 2) {
-            gub = 2;
-            gl.bindBuffer(gl.UNIFORM_BUFFER, globalUniformBuffers[2]);
-          }
           tu.modelToWorld = t.modelToWorld;
-          gl.bufferData(
-            gl.UNIFORM_BUFFER,
-            toFloat32Array(t.modelToWorld),
-            gl.STREAM_DRAW
-          );
+          gl.bufferSubData(gl.UNIFORM_BUFFER, 128, toFloat32Array(t.modelToWorld)); // 64 * 2 = 128
         }
 
         mesh.glFn.apply(gl, mesh.glArgs);
