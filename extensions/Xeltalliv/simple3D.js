@@ -889,7 +889,7 @@
     }
     updateGlCall() {
       const data = this.data, buffers = this.buffers;
-      const length = buffers.position.length;
+      const length = buffers.position ? buffers.position.length : 0;
       let start = 0;
       let amount = buffers.indices
         ? buffers.indices.length
