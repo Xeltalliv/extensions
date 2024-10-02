@@ -1362,8 +1362,10 @@
     }
 
     publicApi.redraw = function () {
-      skin.updateContent(canvas);
-      runtime.requestRedraw();
+      if (canvasDirty) {
+        skin.updateContent(canvas);
+        canvasDirty = false;
+      }
     };
     publicApi.redraw();
   }
@@ -2014,6 +2016,7 @@ void main() {
   const runtime = vm.runtime;
 
   const extensionId = "xeltallivSimple3D";
+  let canvasDirty = true;
   let canvas = document.createElement("canvas");
   let gl = canvas.getContext("webgl2");
   if (!gl)
@@ -2153,6 +2156,7 @@ void main() {
     }
     meshes.clear();
     programs.clear();
+    canvasDirty = true;
     renderer.dirty = true;
     runtime.requestRedraw();
   }
@@ -2219,8 +2223,9 @@ void main() {
           gl.depthMask(false);
         }
         if (currentRenderTarget === canvasRenderTarget) {
-          renderer.dirty = true;
-          runtime.requestRedraw();
+          canvasDirty = true; // Telling extension to update texture
+          renderer.dirty = true; // Telling renderer to redraw the screen
+          runtime.requestRedraw(); // Telling sequencer to yield in loops
         }
       },
     },
@@ -3379,8 +3384,9 @@ void main() {
         mesh.glFn.apply(gl, mesh.glArgs);
 
         if (currentRenderTarget === canvasRenderTarget) {
-          renderer.dirty = true;
-          runtime.requestRedraw();
+          canvasDirty = true; // Telling extension to update texture
+          renderer.dirty = true; // Telling renderer to redraw the screen
+          runtime.requestRedraw(); // Telling sequencer to yield in loops
         }
       },
     },
