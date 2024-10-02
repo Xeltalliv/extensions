@@ -663,10 +663,11 @@
       this.dependencies = new Set();
       this.flagsArray = [];
       this.flagsString = "";
+      this.glCallDirty = false;
       this.glFn = null;
       this.glArgs = [];
     }
-    update() {
+    update(options = {}) {
       const buffers = {};
       const data = {};
       for (const otherMesh of this.dependencies) {
@@ -675,8 +676,12 @@
       }
       this.buffers = Object.assign(buffers, this.myBuffers);
       this.data = Object.assign(data, this.myData);
+      if (options.deleteVao) this.deleteVao();
+      if (options.lengthsDirty) this.lengthsDirty = true;
+      if (options.glCallDirty) this.glCallDirty = true;
+      if (options.updateFlags) this.updateFlags();
       for (const otherMesh of this.dependants) {
-        otherMesh.update();
+        otherMesh.update(options);
       }
     }
     dependsOn(mesh) {
@@ -863,9 +868,6 @@
         gl.deleteVertexArray(this.vao);
         this.vao = null;
       }
-      for (const otherMesh of this.dependants) {
-        otherMesh.deleteVao();
-      }
     }
     checkLengths() {
       let length = -1;
@@ -883,13 +885,12 @@
       }
       this.lengthsDirty = false;
       this.lengthsMismatch = mismatch;
-      for (const otherMesh of this.dependants) {
-        otherMesh.checkLengths();
-      }
+      this.updateGlCall();
     }
     updateGlCall() {
       const data = this.data, buffers = this.buffers;
       const length = buffers.position ? buffers.position.length : 0;
+      this.glCallDirty = false;
       let start = 0;
       let amount = buffers.indices
         ? buffers.indices.length
@@ -952,9 +953,6 @@
           this.glArgs = [data.primitives ?? gl.TRIANGLES, start, amount];
         }
       }
-      for (const otherMesh of this.dependants) {
-        otherMesh.updateGlCall();
-      }
     }
     updateFlags() {
       const mesh = this;
@@ -994,10 +992,6 @@
 
       this.flagsArray = flags;
       this.flagsString = flags.join("|");
-
-      for (const otherMesh of this.dependants) {
-        otherMesh.updateFlags();
-      }
     }
     destroy() {
       for (let name in this.myBuffers) {
@@ -1011,11 +1005,14 @@
         otherMesh.dependants.delete(this);
       }
       for (const otherMesh of this.dependants) {
-        otherMesh.update();
+        otherMesh.update({
+          deleteVao: true,
+          lengthsDirty: true,
+//        glCallDirty: true, // Implied from lengthsDirty
+          updateFlags: true
+        });
       }
-      if (this.vao) {
-        gl.deleteVertexArray(this.vao);
-      }
+      this.deleteVao();
       //TODO: continue
     }
   }
@@ -1949,14 +1946,14 @@ void main() {
     if (mesh.uploadOffset < 0) {
       const buffer =
         mesh.myBuffers[name] ?? (mesh.myBuffers[name] = new Buffer(type));
-      if (buffer.size !== size || buffer.bytesPerEl !== value.BYTES_PER_ELEMENT) mesh.deleteVao();
-      if (buffer.length !== value.length / size) mesh.lengthsDirty = true;
+      const deleteVao = (buffer.size !== size || buffer.bytesPerEl !== value.BYTES_PER_ELEMENT);
+      const lengthsDirty = (buffer.length !== value.length / size);
       gl.bindBuffer(target, buffer.buffer);
       gl.bufferData(target, value, mesh.uploadUsage);
       buffer.size = size;
       buffer.length = value.length / size;
       buffer.bytesPerEl = value.BYTES_PER_ELEMENT;
-      mesh.update();
+      mesh.update({deleteVao, lengthsDirty});
     } else {
       const buffer = mesh.myBuffers[name];
       if (
@@ -2357,7 +2354,12 @@ void main() {
         for (let otherMesh of parentMeshes) {
           otherMesh.dependants.add(mesh);
         }
-        mesh.update();
+        mesh.update({
+          deleteVao: true,
+          lengthsDirty: true,
+//        glCallDirty: true, // Implied from lengthsDirty
+          updateFlags: true
+        });
       },
     },
     {
@@ -2843,8 +2845,7 @@ void main() {
           diff.push(m4.multiply(mesh.bonesCurr[i], mesh.bonesOrig[i]));
         }
         mesh.bonesDiff = diff.flat();
-        mesh.update();
-        mesh.updateFlags();
+        mesh.update({updateFlags: true});
       },
     },
     {
@@ -3076,7 +3077,7 @@ void main() {
         if (!hasOwn(Primitives, primitivesName)) return;
         mesh.myData.primitives = Primitives[primitivesName];
         mesh.myData.primitivesName = primitivesName;
-        mesh.update();
+        mesh.update({glCallDirty: true});
       },
     },
     {
@@ -3152,8 +3153,7 @@ void main() {
         if (!mesh) return;
         mesh.myData.alphaTest = alphaTest;
         mesh.myData.makeOpaque = makeOpaque;
-        mesh.update();
-        mesh.updateFlags();
+        mesh.update({updateFlags: true});
       },
     },
     {
@@ -3175,8 +3175,7 @@ void main() {
         const billboarding = Cast.toBoolean(BILLBOARDING);
         if (!mesh) return;
         mesh.myData.billboarding = billboarding;
-        mesh.update();
-        mesh.updateFlags();
+        mesh.update({updateFlags: true});
       },
     },
     {
@@ -3224,8 +3223,7 @@ void main() {
           mesh.myData.interpolation = "MSAA_CENTROID";
         if (MODE === "separately for each sample" && ext_smi)
           mesh.myData.interpolation = "MSAA_SAMPLE";
-        mesh.update();
-        mesh.updateFlags();
+        mesh.update({updateFlags: true});
       },
     },
     {
@@ -3252,8 +3250,7 @@ void main() {
         const end = Math.max(0, Math.floor(Cast.toNumber(END)));
         if (!mesh) return;
         mesh.myData.drawRange = [start, Math.max(0, end - start)];
-        mesh.update();
-        mesh.glfn
+        mesh.update({glCallDirty: true});
       },
     },
     {
@@ -3276,8 +3273,7 @@ void main() {
         const mesh = meshes.get(Cast.toString(NAME));
         if (!mesh) return;
         mesh.myData.uvOffset = [Cast.toNumber(U), Cast.toNumber(V)];
-        mesh.update();
-        mesh.updateFlags();
+        mesh.update({updateFlags: true});
       },
     },
     {
@@ -3297,10 +3293,8 @@ void main() {
           currentRenderTarget.getMesh() === mesh) return;
         const data = mesh.data, buffers = mesh.buffers;
 
-        if (mesh.lengthsDirty) {
-          mesh.checkLengths();
-          mesh.updateGlCall();
-        }
+        if (mesh.lengthsDirty) mesh.checkLengths();
+        if (mesh.glCallDirty) mesh.updateGlCall();
         if (mesh.lengthsMismatch) return;
 
         if (mesh.vao === null) mesh.createVao();
