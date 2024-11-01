@@ -1476,7 +1476,6 @@ uniform Global {
   highp float u_fog_dist_diff;
 };
 uniform vec2 u_uvOffset;
-uniform float u_alpha_threshold;
 
 #ifdef BONE_COUNT
 uniform mat4 u_bones[BONE_COUNT];
@@ -1623,7 +1622,6 @@ uniform Global {
   highp vec3 u_fog_position;
   highp float u_fog_dist_diff;
 };
-uniform vec2 u_uvOffset;
 uniform float u_alpha_threshold;
 
 void main() {
